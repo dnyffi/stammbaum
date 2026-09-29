@@ -13,9 +13,14 @@
   function dbHeaders(withPin){
     const h = {
       'apikey': CFG.anonKey,
-      'Authorization': 'Bearer ' + CFG.anonKey,
       'Content-Type': 'application/json',
     };
+    // Neues Supabase-Schluesselformat (sb_publishable_..., sb_secret_...) ist kein JWT
+    // und gehoert nur in den apikey-Header. Das alte Format (eyJ...) braucht zusaetzlich
+    // den Authorization-Header - beide Faelle werden hier abgedeckt.
+    if (!CFG.anonKey || !CFG.anonKey.startsWith('sb_')){
+      h['Authorization'] = 'Bearer ' + CFG.anonKey;
+    }
     if (withPin) h['x-family-pin'] = CFG.pin || '';
     return h;
   }
