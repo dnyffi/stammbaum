@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stammbaum · Nyffenegger · Meier · Künzi · Wetli</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,500&amp;family=Inter:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+  :root{
+    --kraft-1:#b8895a;
+    --kraft-2:#a67848;
+    --kraft-3:#8f6339;
+    --kraft-edge:#6e4d2a;
+    --ink:#2b2118;
+    --ink-soft:#5a4a37;
+    --card:#f6ecd8;
+    --card-edge:#e2cfa8;
+    --seal-red:#a33b2c;
+    --seal-green:#4c6b4f;
+    --seal-blue:#3c5a78;
+    --seal-orange:#c07a2e;
+    --twine:#7a5230;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(ellipse at 20% 10%, rgba(255,255,255,0.06), transparent 40%),
+      radial-gradient(ellipse at 80% 90%, rgba(0,0,0,0.10), transparent 45%),
+      repeating-linear-gradient(90deg, rgba(0,0,0,0.015) 0 2px, transparent 2px 4px),
+      linear-gradient(160deg, var(--kraft-1), var(--kraft-2) 55%, var(--kraft-3));
+    color:var(--ink);
+    font-family:'Inter', sans-serif;
+    min-height:100vh;
+  }
+
+  /* ---------- Header ---------- */
+  header{
+    padding:2.2rem 1.5rem 1.4rem;
+    text-align:center;
+    position:sticky; top:0; z-index:50;
+    background:linear-gradient(180deg, var(--kraft-1) 0%, var(--kraft-1) 78%, transparent 100%);
+    backdrop-filter: blur(2px);
+  }
+  header h1{
+    font-family:'Fraunces', serif;
+    font-weight:600;
+    font-size:clamp(1.6rem, 4vw, 2.6rem);
+    margin:0 0 .2rem;
+    color:#fbf3e2;
+    text-shadow:0 2px 0 rgba(0,0,0,0.18);
+    letter-spacing:.01em;
+  }
+  header p.sub{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:.78rem;
+    letter-spacing:.09em;
+    text-transform:uppercase;
+    color:#fbf3e2cc;
+    margin:0 0 1.1rem;
+  }
+
+  .toolbar{
+    display:flex; flex-wrap:wrap; gap:.6rem; justify-content:center; align-items:center;
+  }
+  .toolbar input[type=text]{
+    font-family:'Inter',sans-serif;
+    font-size:.92rem;
+    padding:.55rem .9rem;
+    border-radius:999px;
+    border:1px solid var(--card-edge);
+    background:var(--card);
+    color:var(--ink);
+    min-width:220px;
+    outline:none;
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.15);
+  }
+  .toolbar input[type=text]:focus{ box-shadow: 0 0 0 3px rgba(255,255,255,0.35), inset 0 1px 3px rgba(0,0,0,0.15); }
+  .toolbar button, .toolbar select{
+    font-family:'Inter',sans-serif;
+    font-size:.85rem;
+    font-weight:600;
+    padding:.55rem 1rem;
+    border-radius:999px;
+    border:1px solid var(--card-edge);
+    background:#fbf3e2;
+    color:var(--kraft-edge);
+    cursor:pointer;
+    transition:transform .12s ease, box-shadow .12s ease;
+  }
+  .toolbar button:hover, .toolbar select:hover{ transform:translateY(-1px); box-shadow:0 3px 8px rgba(0,0,0,0.25); }
+  #search-count{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:.75rem;
+    color:#fbf3e2;
+    min-width: 90px;
+  }
+
+  /* ---------- Legend ---------- */
+  .legend{
+    display:flex; gap:1rem; justify-content:center; flex-wrap:wrap;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:.68rem;
+    color:#fbf3e2dd;
+    margin-top:.7rem;
+  }
+  .legend span{display:flex; align-items:center; gap:.35rem;}
+  .dot{width:9px;height:9px;border-radius:50%;display:inline-block; box-shadow:0 1px 2px rgba(0,0,0,.3);}
+
+  /* ---------- Tree wrapper ---------- */
+  main{ padding: 1rem 1rem 6rem; }
+
+  .branch{
+    margin: 2.4rem auto 0;
+    max-width: fit-content;
+  }
+  .branch-title{
+    font-family:'Fraunces', serif;
+    font-style:italic;
+    font-weight:500;
+    font-size:1.05rem;
+    color:#fbf3e2;
+    text-align:center;
+    margin-bottom:1.1rem;
+    text-shadow:0 1px 0 rgba(0,0,0,.2);
+  }
+  .branch-title .n{ font-family:'IBM Plex Mono',monospace; font-style:normal; font-size:.7rem; opacity:.75; }
+  .branch-title .branch-dot{
+    display:inline-block; width:8px; height:8px; border-radius:50%;
+    margin-right:.4rem; vertical-align:middle;
+    box-shadow:0 1px 2px rgba(0,0,0,.3);
+  }
+
+  .tree-scroll{
+    overflow-x:auto;
+    padding: .5rem 2rem 2rem;
+  }
+
+  /* classic CSS org-chart connectors */
+  ul.tree, ul.tree ul{
+    list-style:none; margin:0; padding-top:26px; position:relative;
+    display:flex; justify-content:center;
+  }
+  ul.tree{ padding-top:0; }
+  ul.tree li{
+    position:relative; padding:26px 14px 0; text-align:center;
+    display:flex; flex-direction:column; align-items:center;
+  }
+  ul.tree li::before, ul.tree li::after{
+    content:''; position:absolute; top:0; border-top:2px dashed var(--twine);
+  }
+  ul.tree li::before{ right:50%; width:50%; }
+  ul.tree li::after{ left:50%; width:50%; border-left:2px dashed var(--twine); }
+  ul.tree li:only-child{ padding-top:0; }
+  ul.tree li:only-child::before, ul.tree li:only-child::after{ display:none; }
+  ul.tree li:first-child::before{ border:none; }
+  ul.tree li:last-child::after{ border:none; }
+  ul.tree li:last-child::before{ border-right:2px dashed var(--twine); }
+  ul.tree li:first-child::after{ border-radius:0; }
+  ul.tree > li{ padding-top:0; }
+  ul.tree ul::before{
+    content:''; position:absolute; top:-26px; left:50%;
+    border-left:2px dashed var(--twine); width:0; height:26px;
+  }
+  li.node-li > .connector-down{
+    position:relative; height:26px; width:2px; background-image: linear-gradient(var(--twine) 60%, transparent 0%);
+    background-size: 2px 8px; margin:0 auto;
+  }
+  li.node-li.no-children > .connector-down{ display:none; }
+
+  /* ---------- Card ---------- */
+  .unit{
+    display:flex; align-items:stretch; gap:0; position:relative;
+  }
+  .card{
+    background:var(--card);
+    border:1px solid var(--card-edge);
+    border-radius:3px;
+    padding:.55rem .8rem .5rem;
+    min-width:140px; max-width:190px;
+    box-shadow: 2px 3px 6px rgba(30,18,5,0.35), 0 0 0 1px rgba(255,255,255,0.08) inset;
+    position:relative;
+    cursor:default;
+    transition: box-shadow .15s ease, transform .15s ease;
+  }
+  .card::before{ /* washi tape corner */
+    content:''; position:absolute; top:-7px; left:14px; width:34px; height:14px;
+    background:rgba(255,255,255,0.55);
+    border:1px solid rgba(0,0,0,0.06);
+    transform:rotate(-3deg);
+    box-shadow:0 1px 2px rgba(0,0,0,.15);
+  }
+  .card .name{
+    font-family:'Fraunces', serif; font-weight:600; font-size:.92rem;
+    color:var(--ink); line-height:1.18; margin-bottom:.15rem;
+  }
+  .card .dates{
+    font-family:'IBM Plex Mono', monospace; font-size:.68rem; color:var(--ink-soft);
+  }
+  .card .place{ font-size:.66rem; color:var(--ink-soft); font-style:italic; margin-top:.1rem;}
+  .card .bem{
+    font-size:.63rem; color:#7a5c3a; margin-top:.3rem; line-height:1.25;
+    display:none; text-align:left; border-top:1px dashed var(--card-edge); padding-top:.3rem;
+  }
+  .card.expanded-info .bem{ display:block; }
+  .card.match{ box-shadow:0 0 0 3px var(--seal-red), 2px 3px 6px rgba(30,18,5,0.35); }
+  .card.dim{ opacity:.25; }
+  .card .gender{ font-size:.7rem; color:var(--ink-soft); font-weight:400; }
+  .card .bez{
+    font-size:.6rem; color:var(--seal-blue); text-transform:uppercase; letter-spacing:.04em;
+    margin-top:.15rem;
+  }
+  .edit-btn{
+    position:absolute; top:-9px; right:-9px; width:22px; height:22px; border-radius:50%;
+    background:#fbf3e2; border:1px solid var(--card-edge); color:var(--kraft-edge);
+    font-size:.7rem; cursor:pointer; display:flex; align-items:center; justify-content:center;
+    box-shadow:0 2px 4px rgba(0,0,0,.3); z-index:6; opacity:0; transition:opacity .12s ease;
+  }
+  .card:hover .edit-btn, .card:focus-within .edit-btn{ opacity:1; }
+  @media (hover:none){ .edit-btn{ opacity:1; } }
+
+  /* ---------- Edit modal ---------- */
+  .modal-overlay{
+    position:fixed; inset:0; background:rgba(20,13,5,0.55); z-index:200;
+    display:flex; align-items:flex-start; justify-content:center;
+    padding:2rem 1rem; overflow-y:auto;
+  }
+  .modal-card{
+    background:var(--card); border:1px solid var(--card-edge); border-radius:8px;
+    width:100%; max-width:420px; box-shadow:0 12px 30px rgba(0,0,0,0.4);
+    padding:1.1rem 1.2rem 1.3rem;
+  }
+  .modal-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:.6rem; }
+  .modal-head h2{
+    font-family:'Fraunces',serif; font-weight:600; font-size:1.15rem; margin:0; color:var(--ink);
+  }
+  .modal-close{
+    background:none; border:none; font-size:1.4rem; line-height:1; cursor:pointer; color:var(--ink-soft);
+    padding:0 .2rem;
+  }
+  .modal-body{ display:flex; flex-direction:column; gap:.7rem; }
+  .modal-body label{
+    display:flex; flex-direction:column; gap:.25rem; font-size:.72rem; color:var(--ink-soft);
+    font-family:'IBM Plex Mono',monospace; text-transform:uppercase; letter-spacing:.03em;
+  }
+  .modal-body .row2{ display:grid; grid-template-columns:1fr 1fr; gap:.6rem; }
+  .modal-body input[type=text], .modal-body select, .modal-body textarea{
+    font-family:'Inter',sans-serif; font-size:.88rem; text-transform:none; letter-spacing:0;
+    padding:.4rem .55rem; border-radius:4px; border:1px solid var(--card-edge);
+    background:#fffaf0; color:var(--ink);
+  }
+  .modal-body textarea{ resize:vertical; }
+  .kinder-box{
+    max-height:150px; overflow-y:auto; border:1px solid var(--card-edge); border-radius:4px;
+    background:#fffaf0; padding:.3rem .5rem;
+  }
+  .kid-row{
+    display:flex !important; flex-direction:row !important; align-items:center; gap:.4rem;
+    font-family:'Inter',sans-serif !important; text-transform:none !important; letter-spacing:0 !important;
+    font-size:.8rem !important; color:var(--ink) !important; padding:.2rem 0;
+    border-bottom:1px dashed var(--card-edge);
+  }
+  .kid-row:last-child{ border-bottom:none; }
+  .kinder-box .hint{ font-size:.75rem; color:var(--ink-soft); margin:.3rem 0; }
+  .modal-foot{ display:flex; justify-content:flex-end; gap:.5rem; margin-top:.9rem; }
+  .modal-foot button{
+    font-family:'Inter',sans-serif; font-size:.82rem; font-weight:600; padding:.5rem 1rem;
+    border-radius:999px; border:1px solid var(--card-edge); background:#fbf3e2; cursor:pointer;
+  }
+  .modal-foot button.primary{ background:var(--seal-green); color:#fbf3e2; border-color:var(--seal-green); }
+  .pin-row{
+    display:none; align-items:center; gap:.5rem; margin-top:.8rem; background:#fffaf0;
+    border-radius:6px; padding:.5rem .6rem; border:1px solid var(--card-edge);
+  }
+  .pin-row.show{ display:flex; }
+  .pin-row input{
+    flex:1; font-family:'Inter',sans-serif; font-size:.85rem; padding:.35rem .5rem;
+    border-radius:4px; border:1px solid var(--card-edge);
+  }
+  .pin-row button{
+    font-family:'Inter',sans-serif; font-size:.78rem; font-weight:600; padding:.4rem .7rem;
+    border-radius:999px; border:1px solid var(--card-edge); background:#fbf3e2; cursor:pointer;
+  }
+  .saved-msg{
+    display:none; font-size:.8rem; color:var(--seal-green); margin:.6rem 0 0; font-weight:600;
+  }
+  .saved-msg.show{ display:block; }
+  .error-msg{
+    display:none; font-size:.8rem; color:var(--seal-red); margin:.6rem 0 0; font-weight:600;
+  }
+  .error-msg.show{ display:block; }
+  #pin-confirm:disabled{ opacity:.6; cursor:default; }
+
+  .data-source{
+    font-family:'IBM Plex Mono',monospace; font-size:.66rem;
+    margin:.6rem auto 0; padding:.25rem .7rem; border-radius:999px; display:inline-block;
+  }
+  .data-source.ok{ background:rgba(76,107,79,0.35); color:#e7f2e8; }
+  .data-source.warn{ background:rgba(163,59,44,0.35); color:#fbe5e0; }
+
+  .spouse-link{
+    align-self:center; font-size:1.05rem; color:var(--seal-red); padding:0 .35rem;
+    font-family:'Fraunces',serif;
+  }
+
+  .toggle{
+    position:absolute; bottom:-11px; left:50%; transform:translateX(-50%);
+    width:22px; height:22px; border-radius:50%;
+    background:var(--seal-green); color:#fbf3e2; border:2px solid #fbf3e2;
+    font-size:.7rem; font-weight:700; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 2px 4px rgba(0,0,0,.35);
+    font-family:'IBM Plex Mono',monospace;
+    z-index:5;
+  }
+  .toggle:hover{ filter:brightness(1.1); }
+  .children-wrap.collapsed{ display:none; }
+
+  /* rotate every 3rd/5th card slightly for the pinned-paper feel */
+  li.node-li:nth-child(3n) .card{ transform:rotate(-0.6deg); }
+  li.node-li:nth-child(5n) .card{ transform:rotate(0.7deg); }
+  li.node-li:nth-child(7n) .card{ transform:rotate(-0.4deg); }
+
+  footer{
+    text-align:center; padding:1.5rem; font-family:'IBM Plex Mono',monospace;
+    font-size:.7rem; color:#fbf3e2aa;
+  }
+
+  ::-webkit-scrollbar{ height:10px; }
+  ::-webkit-scrollbar-track{ background:rgba(0,0,0,0.15); }
+  ::-webkit-scrollbar-thumb{ background:var(--kraft-edge); border-radius:6px; }
+
+  @media (max-width: 640px){
+    .card{ min-width:118px; max-width:150px; padding:.45rem .55rem .4rem;}
+    .card .name{ font-size:.78rem; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Stammbaum · Nyffenegger · Meier · Künzi · Wetli</h1>
+  <p class="sub">25 Familienzweige · 215 Personen · aus Excel &amp; handschriftlichen Notizen zusammengeführt</p>
+  <div class="toolbar">
+    <input type="text" id="search" placeholder="Person suchen … (Name)" autocomplete="off">
+    <span id="search-count"></span>
+    <select id="jump">
+      <option value="">Zweig springen zu …</option>
+    </select>
+    <button id="expandAll">Alle aufklappen</button>
+    <button id="collapseAll">Alle zuklappen</button>
+    <button id="toggleNotes">Notizen ein/aus</button>
+  </div>
+  <div class="legend">
+    <span><span class="dot" style="background:var(--seal-red)"></span> Suchtreffer</span>
+    <span><span class="dot" style="background:var(--seal-green)"></span> Zum Auf-/Zuklappen anklicken</span>
+    <span>⚭ = Ehepartner</span>
+    <span>&#9998; = Karte antippen zum Bearbeiten</span>
+    <span><span class="dot" style="background:var(--seal-blue)"></span><span class="dot" style="background:var(--seal-orange)"></span> Punkt vor Zweig-Titel = laufender Familienzweig</span>
+  </div>
+  <p id="data-source" class="data-source">Lade Daten …</p>
+</header>
+
+<main id="main"></main>
+<div id="modal-root"></div>
+
+<footer>Erstellt aus Nyffenegger_Genealogie_Profi.xlsx + handschriftlichen Stammbaum-Fotos · Angaben mit „Lesart unsicher" bitte gegenprüfen</footer>
+
+<script src="config.js"></script>
+<script src="forest_embed.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
