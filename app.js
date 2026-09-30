@@ -29,6 +29,16 @@
   // Laden: zuerst aus der Datenbank (falls config.js ausgefuellt ist),
   // sonst aus den eingebetteten Daten (forest_embed.js) als Offline-Fallback.
   // ---------------------------------------------------------------
+  // IDs immer als Zahlen fuehren (die Datenbank kann sie je nach Einstellung als Text liefern)
+  function normalizeIds(r){
+    const num = v => (v === null || v === undefined || v === '') ? null : Number(v);
+    r.id = num(r.id);
+    r.vater_id = num(r.vater_id);
+    r.mutter_id = num(r.mutter_id);
+    r.ehepartner_ids = (r.ehepartner_ids || []).map(num).filter(v => v !== null && !isNaN(v));
+    return r;
+  }
+
   async function loadPersons(){
     if (DB_READY){
       try {
@@ -36,7 +46,7 @@
         if (res.ok){
           const rows = await res.json();
           if (rows.length){
-            rows.forEach(r => { PERSONS.byId[r.id] = r; });
+            rows.forEach(r => { normalizeIds(r); PERSONS.byId[r.id] = r; });
             markSource('db');
             return;
           }
@@ -47,7 +57,7 @@
         console.warn('Supabase nicht erreichbar, nutze lokale Daten:', e);
       }
     }
-    (window.ALL_PERSONS || []).forEach(p => { PERSONS.byId[p.id] = Object.assign({}, p); });
+    (window.ALL_PERSONS || []).forEach(p => { const c = normalizeIds(Object.assign({}, p)); PERSONS.byId[c.id] = c; });
     markSource(DB_READY ? 'db-error' : 'offline');
     applyStoredEdits();
   }
@@ -322,8 +332,7 @@
 
   function personObj(p){ return Object.assign({}, p, { name: fullName(p) }); }
 
-  // Getrennt/geschieden: steht beim Partner (nicht bei der Person selbst), weil der
-  // Beziehungsstatus pro Person gespeichert ist und deren eigene Beziehung beschreibt.
+  // Getrennt/geschieden: reicht, wenn es bei einer der beiden Personen steht.
   function isExStatus(x){ return /geschieden|getrennt/i.test((x && x.beziehungsstatus) || ''); }
 
   // Aktuelle Partner von p: verknuepft, nicht getrennt, und nicht inzwischen mit jemand anderem verknuepft.
@@ -332,7 +341,8 @@
     return (p.ehepartner_ids||[]).filter(sid => {
       const sp = byId[sid];
       if (!sp || sid === p.id) return false;
-      if (isExStatus(sp)) return false;
+      // Wer selbst "Geschieden" ist, hat keinen aktuellen Partner; ist der Partner geschieden, ebenfalls nicht mehr
+      if (isExStatus(sp) || isExStatus(p)) return false;
       const back = sp.ehepartner_ids || [];
       return !(back.length && !back.includes(p.id));
     });
