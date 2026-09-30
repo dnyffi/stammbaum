@@ -197,15 +197,30 @@
       </div>`;
   }
 
+  // Kinder und Partnergruppen in der richtigen Reihenfolge (nach Geburtsjahr) anhaengen
+  function childItems(node){
+    const items = [...(node.children||[])];
+    (node.groups||[]).forEach(g => items.push(g));
+    const key = n => n.isGroup ? Math.min(...n.children.map(c => c.jg||9999)) : (n.jg||9999);
+    return items.sort((a,b) => key(a) - key(b));
+  }
+
   function renderNode(node){
     const li = document.createElement('li');
-    li.className = 'node-li';
+    li.className = 'node-li' + (node.isGroup ? ' group-li' : '');
 
     const unit = document.createElement('div');
     unit.className = 'unit';
-    unit.innerHTML = personCardHTML(node);
+    if (node.isGroup){
+      const sym = node.isEx ? '⚮' : '+';
+      const txt = node.isEx ? 'getrennt / geschieden' : 'weiterer Elternteil';
+      unit.innerHTML = `<div class="group-head"><span class="group-label"><span class="sym">${sym}</span> ${txt}</span>${personCardHTML(node.partner)}</div>`;
+      unit.querySelector('.card').classList.add('ex-card');
+    } else {
+      unit.innerHTML = personCardHTML(node);
+    }
 
-    (node.spouses||[]).forEach(sp => {
+    (node.isGroup ? [] : (node.spouses||[])).forEach(sp => {
       const link = document.createElement('span');
       link.className = 'spouse-link';
       link.textContent = '⚭';
@@ -217,7 +232,8 @@
 
     li.appendChild(unit);
 
-    const hasKids = node.children && node.children.length;
+    const items = childItems(node);
+    const hasKids = items.length > 0;
     if (hasKids){
       const toggle = document.createElement('button');
       toggle.className = 'toggle';
@@ -228,7 +244,7 @@
 
       const childUl = document.createElement('ul');
       childUl.className = 'tree children-wrap';
-      node.children.forEach(c => childUl.appendChild(renderNode(c)));
+      items.forEach(c => childUl.appendChild(renderNode(c)));
       li.appendChild(childUl);
 
       toggle.addEventListener('click', (e) => {
@@ -246,6 +262,7 @@
   function countDescendants(node){
     let n = 0;
     (node.children||[]).forEach(c => { n += 1 + countDescendants(c); });
+    (node.groups||[]).forEach(g => { n += countDescendants(g); });
     return n;
   }
 
@@ -305,26 +322,56 @@
 
   function personObj(p){ return Object.assign({}, p, { name: fullName(p) }); }
 
+  // Getrennt/geschieden: steht beim Partner (nicht bei der Person selbst), weil der
+  // Beziehungsstatus pro Person gespeichert ist und deren eigene Beziehung beschreibt.
+  function isExStatus(x){ return /geschieden|getrennt/i.test((x && x.beziehungsstatus) || ''); }
+
+  // Aktuelle Partner von p: verknuepft, nicht getrennt, und nicht inzwischen mit jemand anderem verknuepft.
+  function currentSpouseIds(p){
+    const byId = PERSONS.byId;
+    return (p.ehepartner_ids||[]).filter(sid => {
+      const sp = byId[sid];
+      if (!sp || sid === p.id) return false;
+      if (isExStatus(sp)) return false;
+      const back = sp.ehepartner_ids || [];
+      return !(back.length && !back.includes(p.id));
+    });
+  }
+
   function buildNode(id, childrenOf, stack){
     const byId = PERSONS.byId;
     const p = byId[id];
-    const spouseObjs = [];
-    (p.ehepartner_ids||[]).forEach(sid => {
-      if (byId[sid]) { spouseObjs.push(personObj(byId[sid])); }
-    });
+    const curIds = currentSpouseIds(p);
+    const spouseObjs = curIds.map(sid => personObj(byId[sid]));
     let kidIds = [...(childrenOf[id]||[])];
-    (p.ehepartner_ids||[]).forEach(sid => {
+    curIds.forEach(sid => {
       (childrenOf[sid]||[]).forEach(cid => { if (!kidIds.includes(cid)) kidIds.push(cid); });
     });
     kidIds.sort((a,b) => (byId[a].jg||9999) - (byId[b].jg||9999));
     const kids = [];
+    const groupMap = {};
     kidIds.forEach(cid => {
       if (stack.has(id) || cid === id) return;
-      kids.push(buildNode(cid, childrenOf, new Set([...stack, id])));
+      const child = byId[cid];
+      const built = buildNode(cid, childrenOf, new Set([...stack, id]));
+      // anderer Elternteil dieses Kindes (aus Sicht von p)
+      let other = null;
+      if (child.vater_id === id) other = child.mutter_id;
+      else if (child.mutter_id === id) other = child.vater_id;
+      if (other != null && byId[other] && !curIds.includes(other)){
+        (groupMap[other] = groupMap[other] || []).push(built);
+      } else {
+        kids.push(built);
+      }
     });
     const node = personObj(p);
     node.spouses = spouseObjs;
     node.children = kids;
+    node.groups = Object.keys(groupMap).map(oid => {
+      const partner = byId[oid];
+      const ex = isExStatus(partner) || (p.ehepartner_ids||[]).includes(Number(oid)) || (partner.ehepartner_ids||[]).includes(id);
+      return { isGroup:true, isEx:ex, id:partner.id, partner:personObj(partner), children:groupMap[oid], groups:[] };
+    });
     return node;
   }
 
@@ -335,13 +382,20 @@
 
     // Alle Personen eines gebauten Zweigs (inkl. Nachkommen und Ehepartner) als gezeigt markieren,
     // damit niemand zusaetzlich als eigener Zweig auftaucht.
-    function markAll(n){ visited.add(n.id); (n.spouses||[]).forEach(s => visited.add(s.id)); (n.children||[]).forEach(markAll); }
+    function markAll(n){
+      visited.add(n.id);
+      (n.spouses||[]).forEach(s => visited.add(s.id));
+      (n.children||[]).forEach(markAll);
+      (n.groups||[]).forEach(g => { visited.add(g.partner.id); g.children.forEach(markAll); });
+    }
     function build(id, stack){ const n = buildNode(id, childrenOf, stack); markAll(n); return n; }
 
     const hasParents = id => !!byId[id] && (byId[id].vater_id != null || byId[id].mutter_id != null);
     const allIds = Object.values(byId).sort((a,b) => (a.jg||9999)-(b.jg||9999)).map(p => p.id);
     // Stammeltern: ohne Eltern im Baum. Eingeheiratete (Partner hat Eltern) erscheinen beim Partner.
-    const roots = allIds.filter(id => !hasParents(id) && !(byId[id].ehepartner_ids||[]).some(hasParents));
+    // Mit wem hat diese Person gemeinsame Kinder?
+    const coParents = id => (childrenOf[id]||[]).map(c => byId[c].vater_id === id ? byId[c].mutter_id : byId[c].vater_id).filter(x => x != null);
+    const roots = allIds.filter(id => !hasParents(id) && ![...(byId[id].ehepartner_ids||[]), ...coParents(id)].some(hasParents));
     const forest = [];
     roots.forEach(id => { if (!visited.has(id)) forest.push(build(id, new Set())); });
     allIds.forEach(id => { if (!visited.has(id)) forest.push(build(id, new Set())); });
@@ -426,7 +480,8 @@
       if (!sp) return;
       const link = document.createElement('span');
       link.className = 'spouse-link';
-      link.textContent = '⚭';
+      link.textContent = currentSpouseIds(p).includes(sid) ? '⚭' : '⚮';
+      link.title = link.textContent === '⚮' ? 'getrennt / geschieden' : 'verheiratet / Partner';
       focusWrap.appendChild(link);
       const wrap = document.createElement('div');
       wrap.innerHTML = personDetailCardHTML(sp);
@@ -436,7 +491,7 @@
 
     // --- Nachkommen (darunter) ---
     const subtree = buildSubtreeFor(id);
-    if (subtree.children && subtree.children.length){
+    if (childItems(subtree).length){
       const conn = document.createElement('div');
       conn.className = 'ladder-connector';
       detailRoot.appendChild(conn);
@@ -444,7 +499,7 @@
       scroller.className = 'tree-scroll';
       const ul = document.createElement('ul');
       ul.className = 'tree';
-      subtree.children.forEach(c => ul.appendChild(renderNode(c)));
+      childItems(subtree).forEach(c => ul.appendChild(renderNode(c)));
       scroller.appendChild(ul);
       detailRoot.appendChild(scroller);
     }
@@ -466,7 +521,106 @@
     renderDetailView(id);
   }
 
+  // ---------------------------------------------------------------
+  // Datenpruefung: findet Widersprueche in den aktuellen Daten
+  // ---------------------------------------------------------------
+  function yearOf(d, j){ if (j) return Number(j); const m = String(d||'').match(/(\d{4})/); return m ? Number(m[1]) : null; }
+
+  function runChecks(){
+    const byId = PERSONS.byId, all = Object.values(byId);
+    const groups = [];
+    const G = (title, help) => { const g = { title, help, rows: [] }; groups.push(g); return g; };
+    const link = x => x ? `<a href="#/person/${x.id}">${escapeHtml(fullName(x))}</a>${yearOf(x.geburt,x.jg) ? ' *' + yearOf(x.geburt,x.jg) : ''}` : '?';
+
+    const gSelf = G('Person ist als eigener Elternteil eingetragen', 'Vater oder Mutter zeigt auf die Person selbst. Meist wurde bei gleichem Namen (Vater und Sohn) die falsche Person gewählt.');
+    const gAge = G('Unplausibles Alter der Eltern', 'Vater jünger als 15 oder älter als 70, Mutter jünger als 14 oder älter als 50 bei der Geburt. Oft eine Verwechslung bei gleichem Namen oder ein Tippfehler im Jahr.');
+    const gDeath = G('Widersprüchliche Lebensdaten', 'Tod vor der Geburt oder Geburt nach dem Tod eines Elternteils.');
+    const gSex = G('Geschlecht passt nicht zur Rolle', 'Als Vater eingetragen, aber weiblich, oder umgekehrt.');
+    const gNoSex = G('Geschlecht fehlt', 'Ohne Geschlecht kann beim Zuordnen von Kindern nicht entschieden werden, ob Vater oder Mutter gemeint ist.');
+    const gOne = G('Partner nur einseitig verknüpft', 'A verweist auf B, aber B nicht auf A. Häufig wurde bei gleichem Namen die falsche Person verknüpft, oder es ist eine frühere Beziehung (dann bei der Person Beziehung auf Geschieden setzen).');
+    const gText = G('Partner nur als Text eingetragen', 'Der Name steht im Feld Partner, ist aber mit keiner Person verknüpft. Tipp: im Bearbeiten-Fenster den Namen aus der Vorschlagsliste wählen.');
+    const gPair = G('Eltern eines Kindes sind kein Paar', 'Vater und Mutter sind eingetragen, aber nicht als Partner miteinander verknüpft.');
+    const gDup = G('Möglicher Doppeleintrag', 'Gleicher Vorname, passender Nachname oder Mädchenname und kein widersprechendes Geburtsjahr.');
+    const gLone = G('Person ohne jede Verbindung', 'Keine Eltern, keine Kinder, kein verknüpfter Partner. Diese Personen hängen lose im Baum.');
+
+    all.forEach(p => {
+      const v = byId[p.vater_id], m = byId[p.mutter_id];
+      const b = yearOf(p.geburt, p.jg), d = yearOf(p.sterbe, p.todesjahr);
+      if (p.vater_id === p.id || p.mutter_id === p.id) gSelf.rows.push(link(p));
+      if (b && d && d < b) gDeath.rows.push(`${link(p)}: gestorben ${d} vor Geburt ${b}`);
+      [['Vater', v, 15, 70], ['Mutter', m, 14, 50]].forEach(([r, x, mn, mx]) => {
+        if (!x || x.id === p.id) return;
+        const xb = yearOf(x.geburt, x.jg), xd = yearOf(x.sterbe, x.todesjahr);
+        if (b && xb && (b - xb < mn || b - xb > mx)) gAge.rows.push(`${link(p)}: ${r} ${link(x)} wäre bei der Geburt ${b - xb} Jahre alt`);
+        if (b && xd && b > xd + (r === 'Vater' ? 1 : 0)) gDeath.rows.push(`${link(p)}: geboren nach dem Tod von ${r} ${link(x)} †${xd}`);
+      });
+      if (v && v.geschlecht === 'w') gSex.rows.push(`${link(p)}: Vater ${link(v)} ist weiblich eingetragen`);
+      if (m && m.geschlecht === 'm') gSex.rows.push(`${link(p)}: Mutter ${link(m)} ist männlich eingetragen`);
+      if (!p.geschlecht) gNoSex.rows.push(link(p));
+      (p.ehepartner_ids||[]).forEach(sid => {
+        const sp = byId[sid];
+        if (sp && sid !== p.id && !(sp.ehepartner_ids||[]).includes(p.id) && !isExStatus(p))
+          gOne.rows.push(`${link(p)} verweist auf ${link(sp)}, umgekehrt fehlt der Verweis`);
+      });
+      if (p.ehepartner_raw && !(p.ehepartner_ids||[]).length){
+        const t = p.ehepartner_raw.trim().toLowerCase();
+        const hit = all.filter(x => x.id !== p.id && [x.vorname, x.nachname].filter(Boolean).join(' ').toLowerCase() === t);
+        gText.rows.push(`${link(p)}: "${escapeHtml(p.ehepartner_raw)}"` + (hit.length ? `, passende Person vorhanden: ${hit.map(link).join(', ')}` : ''));
+      }
+      if (v && m && !(v.ehepartner_ids||[]).includes(m.id) && !(m.ehepartner_ids||[]).includes(v.id))
+        gPair.rows.push(`${link(p)}: ${link(v)} und ${link(m)}`);
+      const hasKids = all.some(x => x.vater_id === p.id || x.mutter_id === p.id);
+      const linkedByOthers = all.some(x => (x.ehepartner_ids||[]).includes(p.id));
+      if (p.vater_id == null && p.mutter_id == null && !(p.ehepartner_ids||[]).length && !hasKids && !linkedByOthers) gLone.rows.push(link(p));
+    });
+
+    for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++){
+      const a = all[i], c = all[j];
+      if (!a.vorname || (a.vorname||'').toLowerCase() !== (c.vorname||'').toLowerCase()) continue;
+      const na = [a.nachname, a.maedchenname].filter(Boolean).map(x => x.toLowerCase());
+      const nc = [c.nachname, c.maedchenname].filter(Boolean).map(x => x.toLowerCase());
+      if (!na.some(x => nc.some(y => x.includes(y) || y.includes(x)))) continue;
+      const ya = yearOf(a.geburt, a.jg), yc = yearOf(c.geburt, c.jg);
+      if (ya && yc && ya !== yc) continue;
+      gDup.rows.push(`${link(a)} und ${link(c)}`);
+    }
+    return groups;
+  }
+
+  function renderChecks(){
+    const groups = runChecks();
+    const total = groups.reduce((n, g) => n + g.rows.length, 0);
+    detailRoot.innerHTML = `<a href="#" class="back-link">← Zurück zur Gesamtübersicht</a>
+      <div class="check-page">
+        <h2>Datenprüfung</h2>
+        <p class="check-intro">${total ? `${total} Hinweise in ${groups.filter(g => g.rows.length).length} Bereichen.` : 'Keine Auffälligkeiten gefunden.'}
+        Die Prüfung läuft auf dem aktuellen Stand. Nicht jeder Hinweis ist ein Fehler, aber jeder ist einen Blick wert. Namen antippen öffnet die Person.</p>
+        ${groups.filter(g => g.rows.length).map(g => `
+          <details class="check-group" open>
+            <summary>${escapeHtml(g.title)} <span class="count">${g.rows.length}</span></summary>
+            <p class="check-help">${escapeHtml(g.help)}</p>
+            <ul>${g.rows.map(r => `<li>${r}</li>`).join('')}</ul>
+          </details>`).join('')}
+      </div>`;
+    detailRoot.querySelector('.back-link').addEventListener('click', e => { e.preventDefault(); location.hash = ''; });
+    window.scrollTo(0, 0);
+  }
+
+  function updateCheckBadge(){
+    const el = document.getElementById('check-count');
+    if (el) el.textContent = runChecks().reduce((n, g) => n + g.rows.length, 0) || '';
+  }
+  document.addEventListener('tree:rendered', updateCheckBadge);
+
   function route(){
+    if (location.hash === '#/pruefung'){
+      viewOverview.style.display = 'none';
+      viewDetail.style.display = '';
+      jumpSelect.style.display = 'none';
+      renderChecks();
+      updateCheckBadge();
+      return;
+    }
     const m = location.hash.match(/^#\/person\/(\d+)/);
     if (m && PERSONS.byId[Number(m[1])]) showDetail(Number(m[1]));
     else showOverview();
@@ -535,14 +689,21 @@
     return Object.values(PERSONS.byId)
       .filter(p => p.id !== excludeId)
       .sort((a,b) => fullName(a).localeCompare(fullName(b), 'de'))
-      .map(p => `<option value="${escapeHtml(fullName(p))}"></option>`)
+      .map(p => `<option value="${escapeHtml(personLabel(p))}"></option>`)
       .join('');
+  }
+
+  // Name mit Geburtsjahr, damit gleichnamige Personen (Vater und Sohn) unterscheidbar sind
+  function personLabel(p){
+    const y = p.jg || ((String(p.geburt||'').match(/(\d{4})/)||[])[1]);
+    return fullName(p) + (y ? ` (*${y})` : '');
   }
 
   function openEditModal(id){
     const p = PERSONS.byId[id];
     if (!p) return;
-    const currentKids = new Set(p.kinder_ids || []);
+    // ohne die Person selbst: so wird ein falscher Eintrag "eigener Elternteil" beim Speichern entfernt
+    const currentKids = new Set(Object.values(PERSONS.byId).filter(x => x.id !== id && (x.vater_id === id || x.mutter_id === id)).map(x => x.id));
 
     modalRoot.innerHTML = `
       <div class="modal-overlay" id="modal-overlay">
@@ -587,7 +748,7 @@
               </select>
             </label>
             <label>von: (Partner)
-              <input type="text" id="f-partner" list="person-datalist" placeholder="Namen tippen …" value="${escapeHtml(p.ehepartner_raw || (p.ehepartner_ids&&p.ehepartner_ids[0]!=null ? fullName(PERSONS.byId[p.ehepartner_ids[0]]) : ''))}">
+              <input type="text" id="f-partner" list="person-datalist" placeholder="Namen tippen …" value="${escapeHtml(p.ehepartner_ids&&p.ehepartner_ids[0]!=null&&PERSONS.byId[p.ehepartner_ids[0]] ? personLabel(PERSONS.byId[p.ehepartner_ids[0]]) : (p.ehepartner_raw || ''))}">
             </label>
             <label>Kinder
               <input type="text" id="f-kinder-search" placeholder="Person suchen zum Hinzufügen …">
@@ -705,8 +866,15 @@
       p.beziehungsstatus = document.getElementById('f-beziehung').value || null;
 
       const partnerTyped = document.getElementById('f-partner').value.trim();
-      p.ehepartner_raw = partnerTyped || null;
-      const match = Object.values(PERSONS.byId).find(pp => fullName(pp).toLowerCase() === partnerTyped.toLowerCase());
+      const low = partnerTyped.toLowerCase();
+      const others = Object.values(PERSONS.byId).filter(pp => pp.id !== id);
+      // 1. exakt mit Geburtsjahr gewaehlt, 2. sonst nur eindeutiger Name (bei Namensgleichheit nicht raten)
+      let match = others.find(pp => personLabel(pp).toLowerCase() === low);
+      if (!match){
+        const byName = others.filter(pp => fullName(pp).toLowerCase() === low);
+        if (byName.length === 1) match = byName[0];
+      }
+      p.ehepartner_raw = match ? fullName(match) : (partnerTyped || null);
       p.ehepartner_ids = match ? [match.id] : [];
 
       p.bem = document.getElementById('f-bem').value.trim() || null;
