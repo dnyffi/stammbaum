@@ -164,21 +164,36 @@
     return '';
   }
 
+  // Schlanke Karte: nur Name + Jahre + Geschlecht-Symbol. Alle weiteren Details
+  // gibt es auf der Personen-Detailseite (Klick auf die Karte).
   function personCardHTML(p){
     const dates = fmtDates(p);
     const sym = genderSymbol(p.geschlecht);
-    const geburtsort = p.geburtsort ? `<div class="place">geb. in ${escapeHtml(p.geburtsort)}</div>` : '';
-    const heimatort = p.heimatort ? `<div class="place">Heimatort: ${escapeHtml(p.heimatort)}</div>` : '';
-    const bez = p.beziehungsstatus ? `<div class="bez">${escapeHtml(p.beziehungsstatus)}</div>` : '';
-    const bem = p.bem ? `<div class="bem">${escapeHtml(p.bem)}</div>` : '';
     return `<div class="card" data-pid="${p.id}" data-name="${escapeHtml(fullName(p).toLowerCase())}">
         <button class="edit-btn" data-edit-id="${p.id}" title="Bearbeiten" aria-label="Bearbeiten">&#9998;</button>
         <div class="name">${escapeHtml(fullName(p))} ${sym ? `<span class="gender">${sym}</span>` : ''}</div>
         <div class="dates">${escapeHtml(dates)}</div>
-        ${geburtsort}
-        ${heimatort}
-        ${bez}
-        ${bem}
+      </div>`;
+  }
+
+  // Grosse Karte fuer die Detailansicht: alle Felder.
+  function personDetailCardHTML(p){
+    const sym = genderSymbol(p.geschlecht);
+    const dates = fmtDates(p);
+    const rows = [];
+    if (p.geburtsort) rows.push(['Geburtsort', p.geburtsort]);
+    if (p.heimatort) rows.push(['Heimatort', p.heimatort]);
+    if (p.beziehungsstatus || p.ehepartner_raw) {
+      const partnerName = p.ehepartner_ids && p.ehepartner_ids.length && PERSONS.byId[p.ehepartner_ids[0]]
+        ? fullName(PERSONS.byId[p.ehepartner_ids[0]]) : (p.ehepartner_raw || '');
+      rows.push(['Beziehung', [p.beziehungsstatus, partnerName].filter(Boolean).join(' — ')]);
+    }
+    if (p.bem) rows.push(['Bemerkungen', p.bem]);
+    return `<div class="detail-card" data-pid="${p.id}">
+        <button class="edit-btn" data-edit-id="${p.id}" title="Bearbeiten" aria-label="Bearbeiten">&#9998;</button>
+        <div class="name">${escapeHtml(fullName(p))} ${sym ? `<span class="gender">${sym}</span>` : ''}</div>
+        <div class="dates">${escapeHtml(dates)}</div>
+        ${rows.length ? `<dl class="detail-fields">${rows.map(([k,v]) => `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd>`).join('')}</dl>` : ''}
       </div>`;
   }
 
@@ -268,7 +283,7 @@
     });
   }
 
-  function rebuildForest(){
+  function computeChildrenOf(){
     const byId = PERSONS.byId;
     const childrenOf = {};
     Object.keys(byId).forEach(id => childrenOf[id] = []);
@@ -281,42 +296,183 @@
       uniq.sort((a,b) => (byId[a].jg||9999) - (byId[b].jg||9999));
       childrenOf[k] = uniq;
     });
+    return childrenOf;
+  }
 
+  function personObj(p){ return Object.assign({}, p, { name: fullName(p) }); }
+
+  function buildNode(id, childrenOf, stack){
+    const byId = PERSONS.byId;
+    const p = byId[id];
+    const spouseObjs = [];
+    (p.ehepartner_ids||[]).forEach(sid => {
+      if (byId[sid]) { spouseObjs.push(personObj(byId[sid])); }
+    });
+    let kidIds = [...(childrenOf[id]||[])];
+    (p.ehepartner_ids||[]).forEach(sid => {
+      (childrenOf[sid]||[]).forEach(cid => { if (!kidIds.includes(cid)) kidIds.push(cid); });
+    });
+    kidIds.sort((a,b) => (byId[a].jg||9999) - (byId[b].jg||9999));
+    const kids = [];
+    kidIds.forEach(cid => {
+      if (stack.has(id) || cid === id) return;
+      kids.push(buildNode(cid, childrenOf, new Set([...stack, id])));
+    });
+    const node = personObj(p);
+    node.spouses = spouseObjs;
+    node.children = kids;
+    return node;
+  }
+
+  function rebuildForest(){
+    const byId = PERSONS.byId;
+    const childrenOf = computeChildrenOf();
     const visited = new Set();
-    function personObj(p){ return Object.assign({}, p, { name: fullName(p) }); }
 
-    function buildNode(id, stack){
-      const p = byId[id];
-      visited.add(id);
-      const spouseObjs = [];
-      (p.ehepartner_ids||[]).forEach(sid => {
-        if (byId[sid]) { visited.add(sid); spouseObjs.push(personObj(byId[sid])); }
-      });
-      let kidIds = [...(childrenOf[id]||[])];
-      (p.ehepartner_ids||[]).forEach(sid => {
-        (childrenOf[sid]||[]).forEach(cid => { if (!kidIds.includes(cid)) kidIds.push(cid); });
-      });
-      kidIds.sort((a,b) => (byId[a].jg||9999) - (byId[b].jg||9999));
-      const kids = [];
-      kidIds.forEach(cid => {
-        if (stack.has(id) || cid === id) return;
-        kids.push(buildNode(cid, new Set([...stack, id])));
-      });
-      const node = personObj(p);
-      node.spouses = spouseObjs;
-      node.children = kids;
-      return node;
-    }
+    function build(id, stack){ visited.add(id); const n = buildNode(id, childrenOf, stack); (n.spouses||[]).forEach(s => visited.add(s.id)); return n; }
 
     const allIds = Object.values(byId).sort((a,b) => (a.jg||9999)-(b.jg||9999)).map(p => p.id);
     const roots = allIds.filter(id => byId[id].vater_id == null && byId[id].mutter_id == null);
     const forest = [];
-    roots.forEach(id => { if (!visited.has(id)) forest.push(buildNode(id, new Set())); });
-    allIds.forEach(id => { if (!visited.has(id)) forest.push(buildNode(id, new Set())); });
+    roots.forEach(id => { if (!visited.has(id)) forest.push(build(id, new Set())); });
+    allIds.forEach(id => { if (!visited.has(id)) forest.push(build(id, new Set())); });
     return forest;
   }
 
-  loadPersons().then(() => { renderAll(rebuildForest()); });
+  // Teilbaum ab genau einer Person (fuer die Detailansicht: "darunter").
+  function buildSubtreeFor(id){
+    const childrenOf = computeChildrenOf();
+    return buildNode(id, childrenOf, new Set());
+  }
+
+  // Generationen direkter Vorfahren (Vater/Mutter, Grosseltern, …) fuer die Detailansicht: "darueber".
+  // generations[0] = Eltern, generations[1] = Grosseltern, usw. Keine Geschwister/Seitenlinien.
+  function buildAncestorGenerations(id){
+    const byId = PERSONS.byId;
+    const generations = [];
+    let currentGen = [id];
+    const seen = new Set([id]);
+    while (generations.length < 12){
+      const parents = [];
+      currentGen.forEach(pid => {
+        const p = byId[pid];
+        if (!p) return;
+        if (p.vater_id != null && byId[p.vater_id] && !seen.has(p.vater_id)){ parents.push(p.vater_id); seen.add(p.vater_id); }
+        if (p.mutter_id != null && byId[p.mutter_id] && !seen.has(p.mutter_id)){ parents.push(p.mutter_id); seen.add(p.mutter_id); }
+      });
+      if (!parents.length) break;
+      generations.push(parents);
+      currentGen = parents;
+    }
+    return generations;
+  }
+
+  // ---------------------------------------------------------------
+  // Detailansicht: eine Person zentriert, mit direkter Linie
+  // (Vorfahren) darueber und allen Nachkommen darunter.
+  // ---------------------------------------------------------------
+  const viewOverview = document.getElementById('view-overview');
+  const viewDetail = document.getElementById('view-detail');
+  const detailRoot = document.getElementById('detail-root');
+
+  function renderDetailView(id){
+    const p = PERSONS.byId[id];
+    if (!p){ location.hash = ''; return; }
+    detailRoot.innerHTML = '';
+
+    const back = document.createElement('a');
+    back.href = '#';
+    back.className = 'back-link';
+    back.textContent = '← Zurück zur Gesamtübersicht';
+    back.addEventListener('click', (e) => { e.preventDefault(); location.hash = ''; });
+    detailRoot.appendChild(back);
+
+    // --- Vorfahren-Leiter (darueber) ---
+    const generations = buildAncestorGenerations(id);
+    if (generations.length){
+      const ancWrap = document.createElement('div');
+      ancWrap.className = 'ancestor-ladder';
+      [...generations].reverse().forEach(gen => {
+        const row = document.createElement('div');
+        row.className = 'ancestor-row';
+        gen.forEach(pid => {
+          const c = document.createElement('div');
+          c.innerHTML = personCardHTML(PERSONS.byId[pid]);
+          row.appendChild(c.firstElementChild);
+        });
+        ancWrap.appendChild(row);
+        const conn = document.createElement('div');
+        conn.className = 'ladder-connector';
+        ancWrap.appendChild(conn);
+      });
+      detailRoot.appendChild(ancWrap);
+    }
+
+    // --- Fokus-Person + Ehepartner ---
+    const focusWrap = document.createElement('div');
+    focusWrap.className = 'focus-wrap';
+    focusWrap.innerHTML = personDetailCardHTML(p);
+    (p.ehepartner_ids||[]).forEach(sid => {
+      const sp = PERSONS.byId[sid];
+      if (!sp) return;
+      const link = document.createElement('span');
+      link.className = 'spouse-link';
+      link.textContent = '⚭';
+      focusWrap.appendChild(link);
+      const wrap = document.createElement('div');
+      wrap.innerHTML = personDetailCardHTML(sp);
+      focusWrap.appendChild(wrap.firstElementChild);
+    });
+    detailRoot.appendChild(focusWrap);
+
+    // --- Nachkommen (darunter) ---
+    const subtree = buildSubtreeFor(id);
+    if (subtree.children && subtree.children.length){
+      const conn = document.createElement('div');
+      conn.className = 'ladder-connector';
+      detailRoot.appendChild(conn);
+      const scroller = document.createElement('div');
+      scroller.className = 'tree-scroll';
+      const ul = document.createElement('ul');
+      ul.className = 'tree';
+      subtree.children.forEach(c => ul.appendChild(renderNode(c)));
+      scroller.appendChild(ul);
+      detailRoot.appendChild(scroller);
+    }
+
+    window.scrollTo(0, 0);
+  }
+
+  function showOverview(){
+    viewDetail.style.display = 'none';
+    viewOverview.style.display = '';
+    jumpSelect.style.display = '';
+    renderAll(rebuildForest());
+  }
+
+  function showDetail(id){
+    viewOverview.style.display = 'none';
+    viewDetail.style.display = '';
+    jumpSelect.style.display = 'none';
+    renderDetailView(id);
+  }
+
+  function route(){
+    const m = location.hash.match(/^#\/person\/(\d+)/);
+    if (m && PERSONS.byId[Number(m[1])]) showDetail(Number(m[1]));
+    else showOverview();
+  }
+  window.addEventListener('hashchange', route);
+  loadPersons().then(route);
+
+  // Klick auf eine Karte (aber nicht auf den Bearbeiten-Stift) oeffnet die Detailansicht.
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('.edit-btn') || e.target.closest('.toggle') || e.target.closest('.back-link')) return;
+    const card = e.target.closest('.card, .detail-card');
+    if (card && card.dataset.pid){
+      location.hash = '#/person/' + card.dataset.pid;
+    }
+  });
 
   jumpSelect.addEventListener('change', () => {
     const id = jumpSelect.value;
@@ -333,10 +489,6 @@
     document.querySelectorAll('.children-wrap').forEach(el => el.classList.add('collapsed'));
     document.querySelectorAll('.toggle').forEach(t => t.textContent = '+');
   });
-  document.getElementById('toggleNotes').addEventListener('click', () => {
-    document.querySelectorAll('.card').forEach(c => c.classList.toggle('expanded-info'));
-  });
-
   const searchInput = document.getElementById('search');
   const searchCount = document.getElementById('search-count');
   let debounceTimer;
@@ -574,8 +726,7 @@
       if (!result.ok) return false;
       await persistChildLinks(changedChildren, pin);
 
-      const newForest = rebuildForest();
-      renderAll(newForest);
+      route();
       return true;
     }
   }
