@@ -17,10 +17,11 @@
     --ink-soft:#5a4a37;
     --card:#f6ecd8;
     --card-edge:#e2cfa8;
-    --seal-red:#a33b2c;
-    --seal-green:#4c6b4f;
-    --seal-blue:#3c5a78;
-    --seal-orange:#c07a2e;
+    --seal-red:#c31f18;
+    --seal-green:#5c6e28;
+    --seal-blue:#0a3d7a;
+    --seal-orange:#b8860f;
+    --gold-bright:#fed538;
     --twine:#7a5230;
   }
   *{box-sizing:border-box;}
@@ -38,28 +39,42 @@
 
   /* ---------- Header ---------- */
   header{
-    padding:2.2rem 1.5rem 1.4rem;
+    padding:1.5rem 1.5rem 1.2rem;
     text-align:center;
     position:sticky; top:0; z-index:50;
-    background:linear-gradient(180deg, var(--kraft-1) 0%, var(--kraft-1) 78%, transparent 100%);
+    background:linear-gradient(180deg, var(--kraft-1) 0%, var(--kraft-1) 82%, transparent 100%);
     backdrop-filter: blur(2px);
+    border-bottom:3px double var(--seal-orange);
+  }
+  .crest{
+    width:104px; height:auto; display:block; margin:0 auto .3rem;
+    filter:drop-shadow(0 3px 7px rgba(0,0,0,.4));
   }
   header h1{
     font-family:'Fraunces', serif;
     font-weight:600;
-    font-size:clamp(1.6rem, 4vw, 2.6rem);
-    margin:0 0 .2rem;
+    font-size:clamp(1.5rem, 3.6vw, 2.4rem);
+    margin:0 0 .25rem;
     color:#fbf3e2;
     text-shadow:0 2px 0 rgba(0,0,0,0.18);
     letter-spacing:.01em;
   }
   header p.sub{
     font-family:'IBM Plex Mono', monospace;
-    font-size:.78rem;
-    letter-spacing:.09em;
+    font-size:.72rem;
+    letter-spacing:.1em;
     text-transform:uppercase;
-    color:#fbf3e2cc;
-    margin:0 0 1.1rem;
+    color:var(--gold-bright);
+    margin:0 0 1rem;
+    position:relative;
+    padding-bottom:.7rem;
+  }
+  header p.sub::after{
+    content:'⚜';
+    display:block;
+    font-size:.9rem;
+    color:var(--seal-orange);
+    margin-top:.4rem;
   }
 
   .toolbar{
@@ -124,7 +139,11 @@
     color:#fbf3e2;
     text-align:center;
     margin-bottom:1.1rem;
+    padding-bottom:.6rem;
     text-shadow:0 1px 0 rgba(0,0,0,.2);
+    border-bottom:1px solid var(--seal-orange);
+    display:inline-block;
+    left:50%; position:relative; transform:translateX(-50%);
   }
   .branch-title .n{ font-family:'IBM Plex Mono',monospace; font-style:normal; font-size:.7rem; opacity:.75; }
   .branch-title .branch-dot{
@@ -199,27 +218,52 @@
   .card .dates{
     font-family:'IBM Plex Mono', monospace; font-size:.68rem; color:var(--ink-soft);
   }
-  .card .place{ font-size:.66rem; color:var(--ink-soft); font-style:italic; margin-top:.1rem;}
-  .card .bem{
-    font-size:.63rem; color:#7a5c3a; margin-top:.3rem; line-height:1.25;
-    display:none; text-align:left; border-top:1px dashed var(--card-edge); padding-top:.3rem;
-  }
-  .card.expanded-info .bem{ display:block; }
   .card.match{ box-shadow:0 0 0 3px var(--seal-red), 2px 3px 6px rgba(30,18,5,0.35); }
   .card.dim{ opacity:.25; }
   .card .gender{ font-size:.7rem; color:var(--ink-soft); font-weight:400; }
-  .card .bez{
-    font-size:.6rem; color:var(--seal-blue); text-transform:uppercase; letter-spacing:.04em;
-    margin-top:.15rem;
-  }
+  .card{ cursor:pointer; }
   .edit-btn{
     position:absolute; top:-9px; right:-9px; width:22px; height:22px; border-radius:50%;
     background:#fbf3e2; border:1px solid var(--card-edge); color:var(--kraft-edge);
     font-size:.7rem; cursor:pointer; display:flex; align-items:center; justify-content:center;
     box-shadow:0 2px 4px rgba(0,0,0,.3); z-index:6; opacity:0; transition:opacity .12s ease;
   }
-  .card:hover .edit-btn, .card:focus-within .edit-btn{ opacity:1; }
+  .card:hover .edit-btn, .card:focus-within .edit-btn,
+  .detail-card:hover .edit-btn, .detail-card:focus-within .edit-btn{ opacity:1; }
   @media (hover:none){ .edit-btn{ opacity:1; } }
+
+  /* ---------- Detailansicht ---------- */
+  #view-detail{ padding:1rem 1rem 6rem; max-width:720px; margin:0 auto; }
+  .back-link{
+    display:inline-block; margin-bottom:1.2rem; color:#fbf3e2; text-decoration:none;
+    font-family:'IBM Plex Mono',monospace; font-size:.8rem; border-bottom:1px dashed #fbf3e2aa;
+  }
+  .back-link:hover{ color:#fff; }
+  .ancestor-ladder{ display:flex; flex-direction:column; align-items:center; }
+  .ancestor-row{ display:flex; gap:1rem; justify-content:center; flex-wrap:wrap; }
+  .ladder-connector{
+    width:2px; height:22px; background-image:linear-gradient(var(--twine) 60%, transparent 0%);
+    background-size:2px 8px; margin:0 auto;
+  }
+  .focus-wrap{ display:flex; align-items:stretch; justify-content:center; flex-wrap:wrap; gap:0; }
+  .detail-card{
+    background:var(--card); border:2px solid var(--seal-blue); border-radius:5px;
+    padding:.9rem 1.2rem 1rem; min-width:220px; max-width:320px;
+    box-shadow:3px 4px 10px rgba(30,18,5,0.4), inset 0 0 0 3px var(--card), inset 0 0 0 4px var(--seal-orange);
+    position:relative;
+  }
+  .detail-card .name{
+    font-family:'Fraunces',serif; font-weight:600; font-size:1.15rem; color:var(--ink); margin-bottom:.2rem;
+  }
+  .detail-card .dates{ font-family:'IBM Plex Mono',monospace; font-size:.78rem; color:var(--ink-soft); }
+  .detail-fields{ margin:.6rem 0 0; padding-top:.5rem; border-top:1px dashed var(--card-edge); }
+  .detail-fields dt{
+    font-family:'IBM Plex Mono',monospace; font-size:.62rem; text-transform:uppercase;
+    letter-spacing:.04em; color:var(--seal-blue); margin-top:.4rem;
+  }
+  .detail-fields dt:first-child{ margin-top:0; }
+  .detail-fields dd{ margin:.1rem 0 0; font-size:.82rem; color:var(--ink); }
+  #view-detail .tree-scroll{ padding:0 0 1rem; overflow-x:auto; }
 
   /* ---------- Edit modal ---------- */
   .modal-overlay{
@@ -341,6 +385,7 @@
 <body>
 
 <header>
+  <img class="crest" src="crest.png" alt="Familienwappen" width="184" height="167">
   <h1>Stammbaum · Nyffenegger · Meier · Künzi · Wetli</h1>
   <p class="sub">25 Familienzweige · 215 Personen · aus Excel &amp; handschriftlichen Notizen zusammengeführt</p>
   <div class="toolbar">
@@ -351,19 +396,20 @@
     </select>
     <button id="expandAll">Alle aufklappen</button>
     <button id="collapseAll">Alle zuklappen</button>
-    <button id="toggleNotes">Notizen ein/aus</button>
+
   </div>
   <div class="legend">
     <span><span class="dot" style="background:var(--seal-red)"></span> Suchtreffer</span>
     <span><span class="dot" style="background:var(--seal-green)"></span> Zum Auf-/Zuklappen anklicken</span>
     <span>⚭ = Ehepartner</span>
-    <span>&#9998; = Karte antippen zum Bearbeiten</span>
+    <span>Karte antippen = Details &amp; Verbindungen · &#9998; = Bearbeiten</span>
     <span><span class="dot" style="background:var(--seal-blue)"></span><span class="dot" style="background:var(--seal-orange)"></span> Punkt vor Zweig-Titel = laufender Familienzweig</span>
   </div>
   <p id="data-source" class="data-source">Lade Daten …</p>
 </header>
 
-<main id="main"></main>
+<main id="view-overview"><div id="main"></div></main>
+<main id="view-detail" style="display:none"><div id="detail-root"></div></main>
 <div id="modal-root"></div>
 
 <footer>Erstellt aus Nyffenegger_Genealogie_Profi.xlsx + handschriftlichen Stammbaum-Fotos · Angaben mit „Lesart unsicher" bitte gegenprüfen</footer>
