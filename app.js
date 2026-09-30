@@ -1,5 +1,5 @@
 (function(){
-  const SEALS = ['var(--seal-red)','var(--seal-green)','var(--seal-blue)','var(--seal-orange)'];
+  const SEALS = ['var(--red)','var(--green)','var(--dark-blue)','var(--gold)'];
   const main = document.getElementById('main');
 
   const CFG = window.SUPABASE_CONFIG || {};
@@ -15,9 +15,6 @@
       'apikey': CFG.anonKey,
       'Content-Type': 'application/json',
     };
-    // Neues Supabase-Schluesselformat (sb_publishable_..., sb_secret_...) ist kein JWT
-    // und gehoert nur in den apikey-Header. Das alte Format (eyJ...) braucht zusaetzlich
-    // den Authorization-Header - beide Faelle werden hier abgedeckt.
     if (!CFG.anonKey || !CFG.anonKey.startsWith('sb_')){
       h['Authorization'] = 'Bearer ' + CFG.anonKey;
     }
@@ -25,10 +22,6 @@
     return h;
   }
 
-  // ---------------------------------------------------------------
-  // Laden: zuerst aus der Datenbank (falls config.js ausgefuellt ist),
-  // sonst aus den eingebetteten Daten (forest_embed.js) als Offline-Fallback.
-  // ---------------------------------------------------------------
   async function loadPersons(){
     if (DB_READY){
       try {
@@ -53,21 +46,15 @@
   }
 
   function markSource(kind){
-    const el = document.getElementById('data-source');
-    if (!el) return;
     if (kind === 'db'){
-      el.textContent = 'Datenbank verbunden — Änderungen gelten für alle';
-      el.classList.add('ok');
+      window.displayDataSource('Datenbank verbunden', 'ok');
     } else if (kind === 'db-error'){
-      el.textContent = 'Datenbank nicht erreichbar — zeige letzten bekannten Stand, Änderungen nur lokal';
-      el.classList.add('warn');
+      window.displayDataSource('Datenbank nicht erreichbar (lokal)', 'warn');
     } else {
-      el.textContent = 'Keine Datenbank verbunden — Änderungen werden nur lokal in diesem Browser gespeichert';
-      el.classList.add('warn');
+      window.displayDataSource('Lokal gespeichert (keine Datenbank)', 'warn');
     }
   }
 
-  // Lokaler Fallback (nur wenn keine Datenbank konfiguriert ist / nicht erreichbar)
   function persistLocal(person){
     try {
       const raw = localStorage.getItem('stammbaum_edits') || '{}';
@@ -88,7 +75,6 @@
     } catch(e){}
   }
 
-  // Speichern: in die Datenbank (mit PIN) wenn verbunden, sonst nur lokal.
   async function persistPerson(person, pin){
     if (!DB_READY){
       persistLocal(person);
@@ -119,8 +105,6 @@
     }
   }
 
-  // Wenn sich Kinder-Zuordnung aendert, muessen auch die betroffenen
-  // Kinder-Zeilen (vater_id/mutter_id) in der Datenbank aktualisiert werden.
   async function persistChildLinks(changedChildren, pin){
     if (!DB_READY) return true;
     const headers = dbHeaders(true);
@@ -164,396 +148,297 @@
     return '';
   }
 
-  // Schlanke Karte: nur Name + Jahre + Geschlecht-Symbol. Alle weiteren Details
-  // gibt es auf der Personen-Detailseite (Klick auf die Karte).
   function personCardHTML(p){
     const dates = fmtDates(p);
     const sym = genderSymbol(p.geschlecht);
     return `<div class="card" data-pid="${p.id}" data-name="${escapeHtml(fullName(p).toLowerCase())}">
-        <button class="edit-btn" data-edit-id="${p.id}" title="Bearbeiten" aria-label="Bearbeiten">&#9998;</button>
+        <button class="edit-btn" data-edit-id="${p.id}" title="Bearbeiten" aria-label="Bearbeiten">✎</button>
         <div class="name">${escapeHtml(fullName(p))} ${sym ? `<span class="gender">${sym}</span>` : ''}</div>
         <div class="dates">${escapeHtml(dates)}</div>
       </div>`;
   }
 
-  // Grosse Karte fuer die Detailansicht: alle Felder.
   function personDetailCardHTML(p){
     const sym = genderSymbol(p.geschlecht);
     const dates = fmtDates(p);
-    const rows = [];
-    if (p.geburtsort) rows.push(['Geburtsort', p.geburtsort]);
-    if (p.heimatort) rows.push(['Heimatort', p.heimatort]);
-    if (p.beziehungsstatus || p.ehepartner_raw) {
-      const partnerName = p.ehepartner_ids && p.ehepartner_ids.length && PERSONS.byId[p.ehepartner_ids[0]]
-        ? fullName(PERSONS.byId[p.ehepartner_ids[0]]) : (p.ehepartner_raw || '');
-      rows.push(['Beziehung', [p.beziehungsstatus, partnerName].filter(Boolean).join(' — ')]);
-    }
-    if (p.bem) rows.push(['Bemerkungen', p.bem]);
-    return `<div class="detail-card" data-pid="${p.id}">
-        <button class="edit-btn" data-edit-id="${p.id}" title="Bearbeiten" aria-label="Bearbeiten">&#9998;</button>
-        <div class="name">${escapeHtml(fullName(p))} ${sym ? `<span class="gender">${sym}</span>` : ''}</div>
+    const spouse_txt = (p.ehepartner_ids && p.ehepartner_ids[0] != null)
+      ? escapeHtml(fullName(PERSONS.byId[p.ehepartner_ids[0]])) : (p.ehepartner_raw ? escapeHtml(p.ehepartner_raw) : '?');
+    const rel_txt = p.beziehungsstatus || 'unbekannt';
+    return `
+      <div class="detail-card">
+        <button class="edit-btn" data-edit-id="${p.id}" title="Bearbeiten">✎</button>
+        <div class="name">${escapeHtml(fullName(p))} ${sym}</div>
         <div class="dates">${escapeHtml(dates)}</div>
-        ${rows.length ? `<dl class="detail-fields">${rows.map(([k,v]) => `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd>`).join('')}</dl>` : ''}
-      </div>`;
+        <dl class="detail-fields">
+          ${p.geburtsort ? `<dt>Geburtsort</dt><dd>${escapeHtml(p.geburtsort)}</dd>` : ''}
+          ${p.heimatort ? `<dt>Heimatort</dt><dd>${escapeHtml(p.heimatort)}</dd>` : ''}
+          ${p.sterbe ? `<dt>Sterbedatum</dt><dd>${escapeHtml(p.sterbe)}</dd>` : ''}
+          ${p.beziehungsstatus ? `<dt>Beziehung</dt><dd>${escapeHtml(rel_txt)}</dd>` : ''}
+          ${p.ehepartner_ids && p.ehepartner_ids[0] != null ? `<dt>⚭ Partner</dt><dd>${spouse_txt}</dd>` : ''}
+          ${p.ehepartner_raw && (!p.ehepartner_ids || !p.ehepartner_ids[0]) ? `<dt>⚭ Partner (Text)</dt><dd>${escapeHtml(p.ehepartner_raw)}</dd>` : ''}
+          ${p.bem ? `<dt>Bemerkungen</dt><dd>${escapeHtml(p.bem)}</dd>` : ''}
+        </dl>
+      </div>
+    `;
   }
 
-  function renderNode(node){
-    const li = document.createElement('li');
-    li.className = 'node-li';
-
-    const unit = document.createElement('div');
-    unit.className = 'unit';
-    unit.innerHTML = personCardHTML(node);
-
-    (node.spouses||[]).forEach(sp => {
-      const link = document.createElement('span');
-      link.className = 'spouse-link';
-      link.textContent = '⚭';
-      unit.appendChild(link);
-      const wrap = document.createElement('div');
-      wrap.innerHTML = personCardHTML(sp);
-      unit.appendChild(wrap.firstElementChild);
-    });
-
-    li.appendChild(unit);
-
-    const hasKids = node.children && node.children.length;
-    if (hasKids){
-      const toggle = document.createElement('button');
-      toggle.className = 'toggle';
-      toggle.textContent = '−';
-      toggle.title = 'Nachkommen ein-/ausblenden';
-      unit.style.position = 'relative';
-      unit.appendChild(toggle);
-
-      const childUl = document.createElement('ul');
-      childUl.className = 'tree children-wrap';
-      node.children.forEach(c => childUl.appendChild(renderNode(c)));
-      li.appendChild(childUl);
-
-      toggle.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const collapsed = childUl.classList.toggle('collapsed');
-        toggle.textContent = collapsed ? '+' : '−';
-      });
-    } else {
-      li.classList.add('no-children');
-    }
-
-    return li;
+  function personOptionsHTML(self_id){
+    return Object.values(PERSONS.byId)
+      .filter(p => p.id !== self_id)
+      .map(p => `<option value="${escapeHtml(fullName(p))}">${escapeHtml(fullName(p))}</option>`)
+      .join('');
   }
 
-  function countDescendants(node){
-    let n = 0;
-    (node.children||[]).forEach(c => { n += 1 + countDescendants(c); });
-    return n;
+  const branchesMap = {};
+  function registerBranch(title, seal, ids){
+    branchesMap[title] = { seal, ids };
   }
 
-  const jumpSelect = document.getElementById('jump');
-
-  function renderAll(forest){
-    main.innerHTML = '';
-    jumpSelect.innerHTML = '<option value="">Zweig springen zu …</option>';
-    forest.forEach((root, i) => {
-      const section = document.createElement('div');
-      section.className = 'branch';
-      section.id = 'branch-' + i;
-
-      const title = document.createElement('div');
-      title.className = 'branch-title';
-      const kidCount = countDescendants(root);
-      const dotColor = SEALS[i % SEALS.length];
-      title.innerHTML = `<span class="branch-dot" style="background:${dotColor}"></span>${escapeHtml(root.name)} <span class="n">(${kidCount} Nachkommen)</span>`;
-      section.appendChild(title);
-
-      const scroller = document.createElement('div');
-      scroller.className = 'tree-scroll';
-      const ul = document.createElement('ul');
-      ul.className = 'tree';
-      ul.appendChild(renderNode(root));
-      scroller.appendChild(ul);
-      section.appendChild(scroller);
-
-      main.appendChild(section);
-
-      const opt = document.createElement('option');
-      opt.value = 'branch-' + i;
-      opt.textContent = root.name + (root.jg ? ' (*' + root.jg + ')' : '');
-      jumpSelect.appendChild(opt);
-    });
-  }
-
-  function computeChildrenOf(){
-    const byId = PERSONS.byId;
-    const childrenOf = {};
-    Object.keys(byId).forEach(id => childrenOf[id] = []);
-    Object.values(byId).forEach(p => {
-      if (p.vater_id != null && childrenOf[p.vater_id]) childrenOf[p.vater_id].push(p.id);
-      if (p.mutter_id != null && childrenOf[p.mutter_id] && !(childrenOf[p.vater_id]||[]).includes(p.id)) childrenOf[p.mutter_id].push(p.id);
-    });
-    Object.keys(childrenOf).forEach(k => {
-      const uniq = [...new Set(childrenOf[k])];
-      uniq.sort((a,b) => (byId[a].jg||9999) - (byId[b].jg||9999));
-      childrenOf[k] = uniq;
-    });
-    return childrenOf;
-  }
-
-  function personObj(p){ return Object.assign({}, p, { name: fullName(p) }); }
-
-  function buildNode(id, childrenOf, stack){
-    const byId = PERSONS.byId;
-    const p = byId[id];
-    const spouseObjs = [];
-    (p.ehepartner_ids||[]).forEach(sid => {
-      if (byId[sid]) { spouseObjs.push(personObj(byId[sid])); }
-    });
-    let kidIds = [...(childrenOf[id]||[])];
-    (p.ehepartner_ids||[]).forEach(sid => {
-      (childrenOf[sid]||[]).forEach(cid => { if (!kidIds.includes(cid)) kidIds.push(cid); });
-    });
-    kidIds.sort((a,b) => (byId[a].jg||9999) - (byId[b].jg||9999));
-    const kids = [];
-    kidIds.forEach(cid => {
-      if (stack.has(id) || cid === id) return;
-      kids.push(buildNode(cid, childrenOf, new Set([...stack, id])));
-    });
-    const node = personObj(p);
-    node.spouses = spouseObjs;
-    node.children = kids;
-    return node;
-  }
-
-  function rebuildForest(){
-    const byId = PERSONS.byId;
-    const childrenOf = computeChildrenOf();
+  const treeCache = {};
+  function buildTreeHTML(rootId, branchTitle){
+    const key = String(rootId);
+    if (treeCache[key]) return treeCache[key];
+    
     const visited = new Set();
-
-    function build(id, stack){ visited.add(id); const n = buildNode(id, childrenOf, stack); (n.spouses||[]).forEach(s => visited.add(s.id)); return n; }
-
-    const allIds = Object.values(byId).sort((a,b) => (a.jg||9999)-(b.jg||9999)).map(p => p.id);
-    const roots = allIds.filter(id => byId[id].vater_id == null && byId[id].mutter_id == null);
-    const forest = [];
-    roots.forEach(id => { if (!visited.has(id)) forest.push(build(id, new Set())); });
-    allIds.forEach(id => { if (!visited.has(id)) forest.push(build(id, new Set())); });
-    return forest;
-  }
-
-  // Teilbaum ab genau einer Person (fuer die Detailansicht: "darunter").
-  function buildSubtreeFor(id){
-    const childrenOf = computeChildrenOf();
-    return buildNode(id, childrenOf, new Set());
-  }
-
-  // Generationen direkter Vorfahren (Vater/Mutter, Grosseltern, …) fuer die Detailansicht: "darueber".
-  // generations[0] = Eltern, generations[1] = Grosseltern, usw. Keine Geschwister/Seitenlinien.
-  function buildAncestorGenerations(id){
-    const byId = PERSONS.byId;
-    const generations = [];
-    let currentGen = [id];
-    const seen = new Set([id]);
-    while (generations.length < 12){
-      const parents = [];
-      currentGen.forEach(pid => {
-        const p = byId[pid];
-        if (!p) return;
-        if (p.vater_id != null && byId[p.vater_id] && !seen.has(p.vater_id)){ parents.push(p.vater_id); seen.add(p.vater_id); }
-        if (p.mutter_id != null && byId[p.mutter_id] && !seen.has(p.mutter_id)){ parents.push(p.mutter_id); seen.add(p.mutter_id); }
-      });
-      if (!parents.length) break;
-      generations.push(parents);
-      currentGen = parents;
+    function traverse(id){
+      if (visited.has(id)) return '';
+      visited.add(id);
+      const p = PERSONS.byId[id];
+      if (!p) return '';
+      const kids = Object.values(PERSONS.byId).filter(pp => pp.vater_id === id || pp.mutter_id === id);
+      const spouses = (p.ehepartner_ids || []).map(sid => PERSONS.byId[sid]).filter(Boolean);
+      const html = personCardHTML(p);
+      let item = `<li class="node-li ${kids.length ? '' : 'no-children'}">
+        ${html}
+        ${kids.length ? '<div class="connector-down"></div>' : ''}
+      `;
+      if (kids.length){
+        item += `<div class="children-wrap">
+          <ul class="tree">
+            ${kids.map(k => traverse(k.id)).join('')}
+          </ul>
+        </div>
+        <button class="toggle" data-toggle="${id}" title="Toggle">${p.kinder_collapsed ? '+' : '−'}</button>
+        `;
+      }
+      item += '</li>';
+      return item;
     }
-    return generations;
+    
+    const content = traverse(rootId);
+    treeCache[key] = content;
+    return content;
   }
 
-  // ---------------------------------------------------------------
-  // Detailansicht: eine Person zentriert, mit direkter Linie
-  // (Vorfahren) darueber und allen Nachkommen darunter.
-  // ---------------------------------------------------------------
-  const viewOverview = document.getElementById('view-overview');
-  const viewDetail = document.getElementById('view-detail');
-  const detailRoot = document.getElementById('detail-root');
-
-  function renderDetailView(id){
-    const p = PERSONS.byId[id];
-    if (!p){ location.hash = ''; return; }
-    detailRoot.innerHTML = '';
-
-    const back = document.createElement('a');
-    back.href = '#';
-    back.className = 'back-link';
-    back.textContent = '← Zurück zur Gesamtübersicht';
-    back.addEventListener('click', (e) => { e.preventDefault(); location.hash = ''; });
-    detailRoot.appendChild(back);
-
-    // --- Vorfahren-Leiter (darueber) ---
-    const generations = buildAncestorGenerations(id);
-    if (generations.length){
-      const ancWrap = document.createElement('div');
-      ancWrap.className = 'ancestor-ladder';
-      [...generations].reverse().forEach(gen => {
-        const row = document.createElement('div');
-        row.className = 'ancestor-row';
-        gen.forEach(pid => {
-          const c = document.createElement('div');
-          c.innerHTML = personCardHTML(PERSONS.byId[pid]);
-          row.appendChild(c.firstElementChild);
-        });
-        ancWrap.appendChild(row);
-        const conn = document.createElement('div');
-        conn.className = 'ladder-connector';
-        ancWrap.appendChild(conn);
-      });
-      detailRoot.appendChild(ancWrap);
-    }
-
-    // --- Fokus-Person + Ehepartner ---
-    const focusWrap = document.createElement('div');
-    focusWrap.className = 'focus-wrap';
-    focusWrap.innerHTML = personDetailCardHTML(p);
-    (p.ehepartner_ids||[]).forEach(sid => {
-      const sp = PERSONS.byId[sid];
-      if (!sp) return;
-      const link = document.createElement('span');
-      link.className = 'spouse-link';
-      link.textContent = '⚭';
-      focusWrap.appendChild(link);
-      const wrap = document.createElement('div');
-      wrap.innerHTML = personDetailCardHTML(sp);
-      focusWrap.appendChild(wrap.firstElementChild);
-    });
-    detailRoot.appendChild(focusWrap);
-
-    // --- Nachkommen (darunter) ---
-    const subtree = buildSubtreeFor(id);
-    if (subtree.children && subtree.children.length){
-      const conn = document.createElement('div');
-      conn.className = 'ladder-connector';
-      detailRoot.appendChild(conn);
-      const scroller = document.createElement('div');
-      scroller.className = 'tree-scroll';
-      const ul = document.createElement('ul');
-      ul.className = 'tree';
-      subtree.children.forEach(c => ul.appendChild(renderNode(c)));
-      scroller.appendChild(ul);
-      detailRoot.appendChild(scroller);
-    }
-
-    window.scrollTo(0, 0);
-  }
-
-  function showOverview(){
-    viewDetail.style.display = 'none';
-    viewOverview.style.display = '';
-    jumpSelect.style.display = '';
-    renderAll(rebuildForest());
-  }
-
-  function showDetail(id){
-    viewOverview.style.display = 'none';
-    viewDetail.style.display = '';
-    jumpSelect.style.display = 'none';
-    renderDetailView(id);
+  const roots = {};
+  function registerRoot(title, seal, rootId){
+    roots[title] = { seal, rootId };
   }
 
   function route(){
-    const m = location.hash.match(/^#\/person\/(\d+)/);
-    if (m && PERSONS.byId[Number(m[1])]) showDetail(Number(m[1]));
-    else showOverview();
-  }
-  window.addEventListener('hashchange', route);
-  loadPersons().then(route);
-
-  // Klick auf eine Karte (aber nicht auf den Bearbeiten-Stift) oeffnet die Detailansicht.
-  document.addEventListener('click', (e) => {
-    if (e.target.closest('.edit-btn') || e.target.closest('.toggle') || e.target.closest('.back-link')) return;
-    const card = e.target.closest('.card, .detail-card');
-    if (card && card.dataset.pid){
-      location.hash = '#/person/' + card.dataset.pid;
+    const loc = window.location.hash.slice(1);
+    if (loc.startsWith('person/')){
+      const pid = Number(loc.slice(7));
+      showDetailView(pid);
+    } else {
+      showOverviewView();
     }
-  });
+  }
 
-  jumpSelect.addEventListener('change', () => {
-    const id = jumpSelect.value;
-    if (!id) return;
-    const el = document.getElementById(id);
-    if (el) el.scrollIntoView({behavior:'smooth', block:'start'});
-  });
+  function showOverviewView(){
+    document.getElementById('view-overview').style.display = '';
+    document.getElementById('view-detail').style.display = 'none';
+    window.location.hash = '';
+  }
 
-  document.getElementById('expandAll').addEventListener('click', () => {
-    document.querySelectorAll('.children-wrap.collapsed').forEach(el => el.classList.remove('collapsed'));
-    document.querySelectorAll('.toggle').forEach(t => t.textContent = '−');
-  });
-  document.getElementById('collapseAll').addEventListener('click', () => {
-    document.querySelectorAll('.children-wrap').forEach(el => el.classList.add('collapsed'));
-    document.querySelectorAll('.toggle').forEach(t => t.textContent = '+');
-  });
-  const searchInput = document.getElementById('search');
-  const searchCount = document.getElementById('search-count');
-  let debounceTimer;
-  searchInput.addEventListener('input', () => {
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(runSearch, 150);
-  });
-
-  function runSearch(){
-    const q = searchInput.value.trim().toLowerCase();
-    const allCards = document.querySelectorAll('.card');
-    allCards.forEach(c => c.classList.remove('match'));
-    if (!q){ searchCount.textContent = ''; return; }
-    let matches = [];
-    allCards.forEach(c => {
-      if (c.dataset.name && c.dataset.name.includes(q)){
-        c.classList.add('match');
-        matches.push(c);
-      }
+  function showDetailView(pid){
+    const p = PERSONS.byId[pid];
+    if (!p) { showOverviewView(); return; }
+    document.getElementById('view-overview').style.display = 'none';
+    document.getElementById('view-detail').style.display = '';
+    
+    const root = document.getElementById('detail-root');
+    root.innerHTML = `<a href="#" class="back-link">← Zurück zur Übersicht</a>`;
+    root.querySelector('.back-link').addEventListener('click', (e) => {
+      e.preventDefault();
+      showOverviewView();
     });
-    searchCount.textContent = matches.length + ' Treffer';
-    if (matches.length){
-      let p = matches[0].closest('.children-wrap.collapsed');
-      while(p){
-        p.classList.remove('collapsed');
-        p = p.parentElement.closest('.children-wrap.collapsed');
-      }
-      matches[0].scrollIntoView({behavior:'smooth', block:'center', inline:'center'});
+
+    root.innerHTML += personDetailCardHTML(p);
+
+    const vater = p.vater_id ? PERSONS.byId[p.vater_id] : null;
+    const mutter = p.mutter_id ? PERSONS.byId[p.mutter_id] : null;
+    if (vater || mutter){
+      const ancestorHtml = `<div class="ancestor-ladder">
+        <div class="ancestor-row">
+          ${vater ? personDetailCardHTML(vater) : ''}
+          ${mutter ? personDetailCardHTML(mutter) : ''}
+        </div>
+      </div>`;
+      root.innerHTML += ancestorHtml;
     }
+
+    const kids = Object.values(PERSONS.byId).filter(pp => pp.vater_id === pid || pp.mutter_id === pid);
+    if (kids.length){
+      root.innerHTML += `<h3 style="color: var(--cream); text-align: center; margin-top: 2rem;">Kinder</h3>
+        <div class="tree-scroll"><ul class="tree">
+          ${kids.map(k => buildTreeHTML(k.id, '')).join('')}
+        </ul></div>`;
+    }
+
+    document.querySelectorAll('.edit-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openEditModal(Number(btn.dataset.editId));
+      });
+    });
   }
 
-  const modalRoot = document.getElementById('modal-root');
+  function renderOverview(){
+    if (!Object.keys(PERSONS.byId).length){
+      main.innerHTML = '<p style="color: var(--text-light); text-align: center;">Keine Daten vorhanden.</p>';
+      return;
+    }
 
-  function personOptionsHTML(excludeId){
-    return Object.values(PERSONS.byId)
-      .filter(p => p.id !== excludeId)
-      .sort((a,b) => fullName(a).localeCompare(fullName(b), 'de'))
-      .map(p => `<option value="${escapeHtml(fullName(p))}"></option>`)
-      .join('');
+    const allPeople = Object.values(PERSONS.byId);
+    const roots = [];
+    const seenIds = new Set();
+    
+    const byFam = {};
+    allPeople.forEach(p => {
+      const fam = p.nachname || 'Unbekannt';
+      if (!byFam[fam]) byFam[fam] = [];
+      byFam[fam].push(p);
+    });
+
+    Object.keys(byFam).sort().forEach(fam => {
+      const people = byFam[fam];
+      const roots_in_fam = people.filter(p => !p.vater_id && !p.mutter_id && !seenIds.has(p.id));
+      roots_in_fam.forEach(r => {
+        roots.push({ title: `Linie ${fam}`, seal: SEALS[roots.length % SEALS.length], root: r });
+        seenIds.add(r.id);
+      });
+    });
+
+    main.innerHTML = roots.map((root, idx) => {
+      const branchHtml = `
+        <div class="branch">
+          <div class="branch-title">
+            <span class="branch-dot" style="background: ${root.seal}"></span>
+            ${escapeHtml(root.title)}
+          </div>
+          <div class="tree-scroll">
+            <ul class="tree">
+              <li class="node-li">${buildTreeHTML(root.root.id, root.title)}</li>
+            </ul>
+          </div>
+        </div>
+      `;
+      return branchHtml;
+    }).join('');
+
+    attachEventHandlers();
   }
+
+  function attachEventHandlers(){
+    document.querySelectorAll('.card').forEach(card => {
+      card.addEventListener('click', () => {
+        const pid = Number(card.dataset.pid);
+        window.location.hash = '#person/' + pid;
+      });
+    });
+
+    document.querySelectorAll('.toggle').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = Number(btn.dataset.toggle);
+        const p = PERSONS.byId[id];
+        if (p) {
+          p.kinder_collapsed = !p.kinder_collapsed;
+          const wrap = btn.parentElement.querySelector('.children-wrap');
+          if (wrap) wrap.classList.toggle('collapsed');
+          btn.textContent = p.kinder_collapsed ? '+' : '−';
+        }
+      });
+    });
+
+    document.querySelectorAll('.edit-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openEditModal(Number(btn.dataset.editId));
+      });
+    });
+  }
+
+  let searchTimer;
+  function updateSearch(){
+    const query = document.getElementById('search').value.toLowerCase().trim();
+    const allCards = document.querySelectorAll('.card');
+    let matchCount = 0;
+    allCards.forEach(card => {
+      const name = card.dataset.name || '';
+      const matches = !query || name.includes(query);
+      card.classList.toggle('match', matches && query);
+      card.classList.toggle('dim', query && !matches);
+      if (matches && query) matchCount++;
+    });
+    document.getElementById('search-count').textContent = query ? `${matchCount} Treffer` : '';
+  }
+
+  document.getElementById('search').addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(updateSearch, 200);
+  });
+
+  document.getElementById('jump').addEventListener('change', (e) => {
+    const fam = e.target.value;
+    if (fam){
+      const section = document.querySelector(`[data-family="${fam}"]`);
+      if (section) section.scrollIntoView({ behavior: 'smooth' });
+    }
+  });
+
+  document.addEventListener('expandAll', () => {
+    Object.values(PERSONS.byId).forEach(p => { p.kinder_collapsed = false; });
+    document.querySelectorAll('.children-wrap').forEach(w => w.classList.remove('collapsed'));
+    document.querySelectorAll('.toggle').forEach(t => { t.textContent = '−'; });
+  });
+
+  document.addEventListener('collapseAll', () => {
+    Object.values(PERSONS.byId).forEach(p => { p.kinder_collapsed = true; });
+    document.querySelectorAll('.children-wrap').forEach(w => w.classList.add('collapsed'));
+    document.querySelectorAll('.toggle').forEach(t => { t.textContent = '+'; });
+  });
 
   function openEditModal(id){
     const p = PERSONS.byId[id];
     if (!p) return;
+    const modalRoot = document.getElementById('modal-root');
     const currentKids = new Set(p.kinder_ids || []);
+
+    const personList = Object.values(PERSONS.byId)
+      .map(pp => `<option value="${escapeHtml(fullName(pp))}">${escapeHtml(fullName(pp))}</option>`)
+      .join('');
 
     modalRoot.innerHTML = `
       <div class="modal-overlay" id="modal-overlay">
-        <div class="modal-card" role="dialog" aria-modal="true" aria-label="Person bearbeiten">
+        <div class="modal-card">
           <div class="modal-head">
-            <h2>${escapeHtml(fullName(p))}</h2>
-            <button class="modal-close" id="modal-close" aria-label="Schliessen">&times;</button>
+            <h2>Bearbeiten: ${escapeHtml(fullName(p))}</h2>
+            <button class="modal-close" id="modal-close">×</button>
           </div>
           <div class="modal-body">
             <label>Geschlecht
               <select id="f-geschlecht">
                 <option value="">–</option>
-                <option value="m" ${p.geschlecht==='m'?'selected':''}>männlich</option>
-                <option value="w" ${p.geschlecht==='w'?'selected':''}>weiblich</option>
-                <option value="divers" ${p.geschlecht==='divers'?'selected':''}>divers</option>
+                <option value="m" ${p.geschlecht==='m'?'selected':''}>Männlich</option>
+                <option value="w" ${p.geschlecht==='w'?'selected':''}>Weiblich</option>
+                <option value="divers" ${p.geschlecht==='divers'?'selected':''}>Divers</option>
               </select>
             </label>
             <div class="row2">
               <label>Vorname<input type="text" id="f-vorname" value="${escapeHtml(p.vorname||'')}"></label>
-              <label>Zweitname<input type="text" id="f-zweitname" value="${escapeHtml(p.zweitname||'')}"></label>
+              <label>Zweiter Name<input type="text" id="f-zweitname" value="${escapeHtml(p.zweitname||'')}"></label>
             </div>
             <div class="row2">
               <label>Nachname<input type="text" id="f-nachname" value="${escapeHtml(p.nachname||'')}"></label>
@@ -593,7 +478,7 @@
             <button id="modal-save" class="primary">Speichern</button>
           </div>
           <div class="pin-row" id="pin-row">
-            <span>&#128274;</span>
+            <span>🔒</span>
             <input type="text" id="pin-input" placeholder="Familien-PIN">
             <button id="pin-confirm">Bestätigen</button>
           </div>
@@ -601,7 +486,7 @@
           <p class="error-msg" id="error-msg"></p>
         </div>
       </div>
-      <datalist id="person-datalist">${personOptionsHTML(id)}</datalist>
+      <datalist id="person-datalist">${personList}</datalist>
     `;
 
     const kindsBox = document.getElementById('f-kinder-box');
@@ -649,7 +534,7 @@
       const errEl = document.getElementById('error-msg');
       errEl.classList.remove('show');
       if (!pin){
-        document.getElementById('pin-input').style.borderColor = 'var(--seal-red)';
+        document.getElementById('pin-input').style.borderColor = 'var(--red)';
         return;
       }
       const confirmBtn = document.getElementById('pin-confirm');
@@ -668,7 +553,7 @@
       document.getElementById('pin-row').classList.remove('show');
       document.getElementById('saved-msg').textContent = DB_READY
         ? 'Gespeichert — sichtbar für alle.'
-        : 'Gespeichert (nur lokal in diesem Browser — noch keine Datenbank verbunden).';
+        : 'Gespeichert (nur lokal in diesem Browser).';
       document.getElementById('saved-msg').classList.add('show');
       setTimeout(close, 1100);
     });
@@ -735,4 +620,11 @@
     const btn = e.target.closest('.edit-btn');
     if (btn) openEditModal(Number(btn.dataset.editId));
   });
+
+  // Init
+  (async () => {
+    await loadPersons();
+    renderOverview();
+    route();
+  })();
 })();
