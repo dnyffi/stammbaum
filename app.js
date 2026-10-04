@@ -129,6 +129,42 @@
     }
   }
 
+  // Neue Person in der Datenbank anlegen (mit PIN)
+  async function insertPerson(person, pin){
+    if (!DB_READY){ persistLocal(person); return { ok: true, mode: 'local' }; }
+    const body = {
+      id: person.id,
+      vorname: person.vorname, zweitname: person.zweitname, nachname: person.nachname,
+      maedchenname: person.maedchenname, geschlecht: person.geschlecht,
+      geburt: person.geburt, jg: person.jg, geburtsort: person.geburtsort,
+      heimatort: person.heimatort, sterbe: person.sterbe, todesjahr: person.todesjahr,
+      beziehungsstatus: person.beziehungsstatus, ehepartner_raw: person.ehepartner_raw,
+      ehepartner_ids: person.ehepartner_ids && person.ehepartner_ids.length ? person.ehepartner_ids : null,
+      vater_id: person.vater_id, mutter_id: person.mutter_id, bem: person.bem,
+    };
+    const headers = dbHeaders(true);
+    headers['x-family-pin'] = pin;
+    headers['Prefer'] = 'return=representation';
+    async function post(b){
+      const res = await fetch(REST, { method: 'POST', headers, body: JSON.stringify(b) });
+      return { res, txt: res.ok ? '' : await res.text() };
+    }
+    try {
+      let { res, txt } = await post(body);
+      // falls die Datenbank die ID selbst vergibt ("generated always"), ohne ID nochmals versuchen
+      if (!res.ok && /generated always|identity/i.test(txt)){
+        const b2 = Object.assign({}, body); delete b2.id;
+        ({ res, txt } = await post(b2));
+      }
+      if (!res.ok) return { ok: false, mode: 'db', error: txt };
+      const rows = await res.json().catch(() => []);
+      if (rows && rows[0] && rows[0].id != null) person.id = Number(rows[0].id);
+      return { ok: true, mode: 'db' };
+    } catch(e){
+      return { ok: false, mode: 'db', error: String(e) };
+    }
+  }
+
   // Wenn sich Kinder-Zuordnung aendert, muessen auch die betroffenen
   // Kinder-Zeilen (vater_id/mutter_id) in der Datenbank aktualisiert werden.
   async function persistChildLinks(changedChildren, pin){
@@ -310,7 +346,7 @@
       jumpSelect.appendChild(opt);
     });
     const stats = document.getElementById('stats');
-    if (stats) stats.textContent = forest.length + ' Familienzweige, ' + Object.keys(PERSONS.byId).length + ' Personen';
+    if (stats) stats.textContent = Object.keys(PERSONS.byId).length + ' Personen';
     buildStammBar(forest);
     document.dispatchEvent(new CustomEvent('tree:rendered'));
   }
@@ -327,7 +363,8 @@
 
   function buildStammBar(forest){
     const bar = document.getElementById('stamm-bar');
-    if (!bar) return;
+    const sel = document.getElementById('stamm-select');
+    if (!bar && !sel) return;
     // alle Personen-IDs eines Zweigs (Nachkommen inkl. Partner)
     function collect(node, set){
       set.add(node.id);
@@ -357,11 +394,25 @@
     if (rest.length) stammList.push({ key: 'weitere', label: 'Weitere', count: rest.length, sections: rest.map(r => r.id), isRest: true });
     stammList.push({ key: 'alle', label: 'Alle', count: forest.length, sections: items.map(r => r.id), isAll: true });
 
-    bar.innerHTML = '<span class="stamm-label">Stammbaum</span>' + stammList.map(st => {
-      const sub = st.isAll ? st.count + ' Zweige' : (st.isRest ? st.count + ' Zweige' : st.count + ' Nachkommen');
-      return `<button type="button" class="stamm-chip" data-stamm="${escapeHtml(st.key)}">${escapeHtml(st.label)}<small>${escapeHtml(sub)}</small></button>`;
-    }).join('');
-    bar.querySelectorAll('.stamm-chip').forEach(b => b.addEventListener('click', () => applyStamm(b.dataset.stamm, true)));
+    if (bar){
+      bar.innerHTML = '<span class="stamm-label">Stammbaum</span>' + stammList.map(st => {
+        const sub = st.isAll ? st.count + ' Zweige' : (st.isRest ? st.count + ' Zweige' : st.count + ' Nachkommen');
+        return `<button type="button" class="stamm-chip" data-stamm="${escapeHtml(st.key)}">${escapeHtml(st.label)}<small>${escapeHtml(sub)}</small></button>`;
+      }).join('');
+      bar.querySelectorAll('.stamm-chip').forEach(b => b.addEventListener('click', () => applyStamm(b.dataset.stamm, true)));
+    }
+    if (sel){
+      sel.innerHTML = stammList.map(st => {
+        const txt = st.isAll ? 'Alle Zweige' : st.isRest ? 'Weitere Zweige (' + st.count + ')' : 'Stamm ' + st.label + ' (' + st.count + ')';
+        return `<option value="${escapeHtml(st.key)}">${escapeHtml(txt)}</option>`;
+      }).join('');
+    }
+    const statsEl = document.getElementById('stats');
+    if (statsEl){
+      const nMain = stammList.filter(x => !x.isAll && !x.isRest).length;
+      const nRest = (stammList.find(x => x.isRest) || { count: 0 }).count;
+      statsEl.textContent = nMain + ' Stämme' + (nRest ? ', ' + nRest + ' kleinere Zweige' : '') + ', ' + Object.keys(PERSONS.byId).length + ' Personen';
+    }
 
     let want = savedStamm();
     if (!stammList.some(st => st.key === want)){
@@ -381,6 +432,8 @@
     if (!st) return;
     const show = new Set(st.sections);
     main.querySelectorAll('.branch').forEach(sec => { sec.style.display = show.has(sec.id) ? '' : 'none'; });
+    const sel = document.getElementById('stamm-select');
+    if (sel) sel.value = st.key;
     document.querySelectorAll('#stamm-bar .stamm-chip').forEach(b => {
       const on = b.dataset.stamm === st.key;
       b.classList.toggle('active', on);
@@ -726,6 +779,14 @@
     }
   });
 
+  const stammSelect = document.getElementById('stamm-select');
+  if (stammSelect) stammSelect.addEventListener('change', () => {
+    const key = stammSelect.value;
+    saveStamm(key);
+    if (location.hash && location.hash !== '#'){ location.hash = ''; }   // route() zeigt die Übersicht mit dem gewählten Stamm
+    else applyStamm(key, true);
+  });
+
   jumpSelect.addEventListener('change', () => {
     const id = jumpSelect.value;
     if (!id) return;
@@ -797,8 +858,13 @@
   }
 
   function openEditModal(id){
-    const p = PERSONS.byId[id];
+    const isNew = id == null;
+    const p = isNew ? { id: null, vorname: null, zweitname: null, nachname: null, maedchenname: null,
+      geschlecht: null, geburt: null, jg: null, geburtsort: null, heimatort: null, sterbe: null,
+      todesjahr: null, beziehungsstatus: null, ehepartner_raw: null, ehepartner_ids: [],
+      vater_id: null, mutter_id: null, bem: null } : PERSONS.byId[id];
     if (!p) return;
+    const labelOfId = pid => (pid != null && PERSONS.byId[pid]) ? personLabel(PERSONS.byId[pid]) : '';
     // ohne die Person selbst: so wird ein falscher Eintrag "eigener Elternteil" beim Speichern entfernt
     const currentKids = new Set(Object.values(PERSONS.byId).filter(x => x.id !== id && (x.vater_id === id || x.mutter_id === id)).map(x => x.id));
 
@@ -806,7 +872,7 @@
       <div class="modal-overlay" id="modal-overlay">
         <div class="modal-card" role="dialog" aria-modal="true" aria-label="Person bearbeiten">
           <div class="modal-head">
-            <h2>${escapeHtml(fullName(p))}</h2>
+            <h2>${isNew ? 'Neue Person erfassen' : escapeHtml(fullName(p))}</h2>
             <button class="modal-close" id="modal-close" aria-label="Schliessen">&times;</button>
           </div>
           <div class="modal-body">
@@ -833,6 +899,10 @@
             <div class="row2">
               <label>Heimatort<input type="text" id="f-heimatort" value="${escapeHtml(p.heimatort||'')}"></label>
               <label>Gestorben am<input type="text" id="f-sterbe" placeholder="TT.MM.JJJJ oder JJJJ" value="${escapeHtml(p.sterbe || p.todesjahr || '')}"></label>
+            </div>
+            <div class="row2">
+              <label>Vater<input type="text" id="f-vater" list="person-datalist" placeholder="Namen tippen …" value="${escapeHtml(labelOfId(p.vater_id))}"></label>
+              <label>Mutter<input type="text" id="f-mutter" list="person-datalist" placeholder="Namen tippen …" value="${escapeHtml(labelOfId(p.mutter_id))}"></label>
             </div>
             <label>Beziehung
               <select id="f-beziehung">
@@ -922,13 +992,14 @@
       const confirmBtn = document.getElementById('pin-confirm');
       confirmBtn.disabled = true;
       confirmBtn.textContent = 'Speichert …';
-      const ok = await applyEdits(pin);
+      let ok = false, why = '';
+      try { ok = await applyEdits(pin); } catch(e){ why = e.message || String(e); }
       confirmBtn.disabled = false;
       confirmBtn.textContent = 'Bestätigen';
       if (!ok){
-        errEl.textContent = DB_READY
+        errEl.textContent = why || (DB_READY
           ? 'Konnte nicht speichern. PIN falsch oder keine Verbindung zur Datenbank.'
-          : 'Konnte nicht speichern.';
+          : 'Konnte nicht speichern.');
         errEl.classList.add('show');
         return;
       }
@@ -940,7 +1011,26 @@
       setTimeout(close, 1100);
     });
 
+    // Person aus einem Eingabefeld finden (mit Geburtsjahr exakt, sonst eindeutiger Name)
+    function resolvePerson(typed, what){
+      const t = (typed || '').trim();
+      if (!t) return null;
+      const low = t.toLowerCase();
+      const others = Object.values(PERSONS.byId).filter(pp => pp.id !== id);
+      let m = others.find(pp => personLabel(pp).toLowerCase() === low);
+      if (!m){ const byName = others.filter(pp => fullName(pp).toLowerCase() === low); if (byName.length === 1) m = byName[0]; }
+      if (!m) throw new Error(what + ' "' + t + '" nicht gefunden. Bitte aus der Vorschlagsliste wählen oder das Feld leeren.');
+      return m.id;
+    }
+
     async function applyEdits(pin){
+      const vaterId = resolvePerson(document.getElementById('f-vater').value, 'Vater');
+      const mutterId = resolvePerson(document.getElementById('f-mutter').value, 'Mutter');
+      if (isNew && !document.getElementById('f-vorname').value.trim() && !document.getElementById('f-nachname').value.trim()){
+        throw new Error('Bitte mindestens Vorname oder Nachname eingeben.');
+      }
+      p.vater_id = vaterId;
+      p.mutter_id = mutterId;
       p.geschlecht = document.getElementById('f-geschlecht').value || null;
       p.vorname = document.getElementById('f-vorname').value.trim() || null;
       p.zweitname = document.getElementById('f-zweitname').value.trim() || null;
@@ -978,7 +1068,7 @@
 
       const slot = p.geschlecht === 'w' ? 'mutter_id' : 'vater_id';
       const changedChildren = [];
-      Object.values(PERSONS.byId).forEach(pp => {
+      if (!isNew) Object.values(PERSONS.byId).forEach(pp => {
         let touched = false;
         if (pp.vater_id === id && !currentKids.has(pp.id)) { pp.vater_id = null; touched = true; }
         if (pp.mutter_id === id && !currentKids.has(pp.id)) { pp.mutter_id = null; touched = true; }
@@ -987,6 +1077,7 @@
       currentKids.forEach(kid => {
         const child = PERSONS.byId[kid];
         if (!child) return;
+        if (isNew){ changedChildren.push(child); return; }   // wird nach dem Anlegen gesetzt
         if (child.vater_id === id || child.mutter_id === id) return;
         if (slot === 'vater_id' && child.vater_id == null) child.vater_id = id;
         else if (slot === 'mutter_id' && child.mutter_id == null) child.mutter_id = id;
@@ -996,11 +1087,34 @@
       });
       p.kinder_ids = [...currentKids];
 
-      const result = await persistPerson(p, pin);
-      if (!result.ok) return false;
+      if (isNew){
+        // zuerst die neue Person anlegen, dann Kinder und Partner verknüpfen
+        p.id = Math.max(0, ...Object.keys(PERSONS.byId).map(Number)) + 1;
+        const res = await insertPerson(p, pin);
+        if (!res.ok){ console.warn(res.error); throw new Error('Neue Person konnte nicht gespeichert werden (PIN falsch oder Anlegen in der Datenbank nicht erlaubt). ' + String(res.error || '').slice(0, 160)); }
+        PERSONS.byId[p.id] = p;
+        changedChildren.forEach(ch => {
+          if (slot === 'vater_id' && ch.vater_id == null) ch.vater_id = p.id;
+          else if (slot === 'mutter_id' && ch.mutter_id == null) ch.mutter_id = p.id;
+          else if (ch.vater_id == null) ch.vater_id = p.id;
+          else if (ch.mutter_id == null) ch.mutter_id = p.id;
+        });
+        // Partner: Verknüpfung auch beim Partner eintragen, wenn dort noch keiner steht
+        const sp = p.ehepartner_ids && p.ehepartner_ids[0] != null ? PERSONS.byId[p.ehepartner_ids[0]] : null;
+        if (sp && !(sp.ehepartner_ids && sp.ehepartner_ids.length)){
+          sp.ehepartner_ids = [p.id];
+          if (!sp.ehepartner_raw) sp.ehepartner_raw = fullName(p);
+          if (!sp.beziehungsstatus && p.beziehungsstatus) sp.beziehungsstatus = p.beziehungsstatus;
+          await persistPerson(sp, pin);
+        }
+      } else {
+        const result = await persistPerson(p, pin);
+        if (!result.ok) return false;
+      }
       await persistChildLinks(changedChildren, pin);
 
       route();
+      if (isNew) setTimeout(() => { location.hash = '#/person/' + p.id; }, 1150);
       return true;
     }
   }
@@ -1008,5 +1122,7 @@
   document.addEventListener('click', (e) => {
     const btn = e.target.closest('.edit-btn');
     if (btn) openEditModal(Number(btn.dataset.editId));
+    const nb = e.target.closest('#newPerson');
+    if (nb){ e.preventDefault(); openEditModal(null); }
   });
 })();

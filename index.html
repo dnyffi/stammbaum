@@ -74,6 +74,17 @@
     font-family:var(--serif); font-style:italic; font-size:.9rem; color:var(--gold-soft);
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
+  .stamm-select{
+    appearance:none; -webkit-appearance:none; max-width:100%;
+    font-family:var(--serif); font-style:italic; font-size:.95rem; color:var(--gold-soft);
+    background:transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23ecd892' stroke-width='1.6'/%3E%3C/svg%3E") no-repeat right .1rem center / .7rem;
+    border:0; border-bottom:1px dashed rgba(236,216,146,.5); border-radius:0;
+    padding:.05rem 1.1rem .05rem 0; margin:0; cursor:pointer;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .stamm-select:focus-visible{ outline:2px solid var(--gold-soft); outline-offset:2px; }
+  .stamm-select option{ color:#1d2433; background:#f4ecda; font-style:normal; }
+  @media (max-width:520px){ .stamm-select{ font-size:.82rem; } }
   .top-actions{ display:flex; gap:.4rem; }
 
   /* ---------- Seitenmenue (wie GitHub) ---------- */
@@ -416,7 +427,7 @@
     <img src="crest.png" alt="Familienwappen" onerror="this.style.display='none'">
     <div class="brand-text">
       <h1>Stammbaum</h1>
-      <div class="families">Nyffenegger, Meier, Künzi, Wetli</div>
+      <select id="stamm-select" class="stamm-select" aria-label="Stammbaum wählen"><option>Nyffenegger, Meier, Künzi, Wetli</option></select>
     </div>
   </div>
   <div class="top-actions">
@@ -449,6 +460,7 @@
     <section>
       <h2>Werkzeuge</h2>
       <a class="menu-link" href="#/pruefung">Datenprüfung <span id="check-count" class="badge"></span></a>
+      <a class="menu-link" href="#" id="newPerson">＋ Neue Person erfassen</a>
       <a class="menu-link" href="zeitlinie.html">Zeitlinie</a>
       <a class="menu-link" href="druck.html">Druckversion</a>
     </section>
@@ -480,7 +492,7 @@
     <span><span class="sym">✎</span> Bearbeiten</span>
   </div>
 
-  <main id="view-overview"><nav id="stamm-bar" class="stamm-bar" aria-label="Stammbaum wählen"></nav><div id="main"></div></main>
+  <main id="view-overview"><div id="main"></div></main>
   <main id="view-detail" style="display:none"><div id="detail-root"></div></main>
 
   <footer>
