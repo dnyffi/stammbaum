@@ -148,6 +148,30 @@
   .swatch{ width:14px; height:10px; border-radius:2px; display:inline-block; }
   .legend .sym{ color:var(--gold); font-size:1.05rem; }
 
+  /* ---------- Stammbaum-Auswahl ---------- */
+  .stamm-bar{
+    position:sticky; top:var(--header-h); z-index:5;
+    display:flex; gap:.5rem; align-items:stretch; overflow-x:auto; -webkit-overflow-scrolling:touch;
+    padding:.6rem .75rem; margin:-1rem -.5rem 0;
+    background:rgba(13,27,48,.94); backdrop-filter:blur(6px);
+    border-bottom:1px solid rgba(236,216,146,.25);
+    scrollbar-width:none;
+  }
+  .stamm-bar::-webkit-scrollbar{ display:none; }
+  .stamm-label{ align-self:center; font-family:var(--serif); font-style:italic; color:var(--gold-soft); white-space:nowrap; padding-right:.25rem; }
+  .stamm-chip{
+    flex:none; display:flex; flex-direction:column; align-items:flex-start; gap:.05rem;
+    font:inherit; font-family:var(--serif); font-size:1rem; line-height:1.15;
+    color:var(--parchment); background:transparent; cursor:pointer;
+    border:1px solid rgba(244,236,218,.45); border-radius:.6rem; padding:.4rem .8rem;
+  }
+  .stamm-chip small{ font-family:inherit; font-style:italic; font-size:.75rem; color:var(--gold-soft); }
+  .stamm-chip:hover{ border-color:var(--gold-soft); }
+  .stamm-chip.active{ background:var(--parchment); color:var(--ink); border-color:var(--parchment); }
+  .stamm-chip.active small{ color:#6b5a2a; }
+  .stamm-bar + #main .branch:first-of-type{ margin-top:1.4rem; }
+  @media print{ .stamm-bar{ display:none; } }
+
   /* ---------- Baum ---------- */
   #view-overview, #view-detail{ padding:1rem .5rem 4rem; }
   #main{ zoom:var(--zoom, 1); }
@@ -425,6 +449,7 @@
     <section>
       <h2>Werkzeuge</h2>
       <a class="menu-link" href="#/pruefung">Datenprüfung <span id="check-count" class="badge"></span></a>
+      <a class="menu-link" href="zeitlinie.html">Zeitlinie</a>
       <a class="menu-link" href="druck.html">Druckversion</a>
     </section>
     <section>
@@ -437,7 +462,6 @@
       <ul class="coming">
         <li>Herkunft und Ortschaften</li>
         <li>Wappen</li>
-        <li>Zeitlinie</li>
         <li>Auswertungen</li>
       </ul>
     </section>
@@ -456,7 +480,7 @@
     <span><span class="sym">✎</span> Bearbeiten</span>
   </div>
 
-  <main id="view-overview"><div id="main"></div></main>
+  <main id="view-overview"><nav id="stamm-bar" class="stamm-bar" aria-label="Stammbaum wählen"></nav><div id="main"></div></main>
   <main id="view-detail" style="display:none"><div id="detail-root"></div></main>
 
   <footer>

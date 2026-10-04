@@ -311,7 +311,86 @@
     });
     const stats = document.getElementById('stats');
     if (stats) stats.textContent = forest.length + ' Familienzweige, ' + Object.keys(PERSONS.byId).length + ' Personen';
+    buildStammBar(forest);
     document.dispatchEvent(new CustomEvent('tree:rendered'));
+  }
+
+  // ---------------------------------------------------------------
+  // Stammbaum-Auswahl: die 4 grössten Stämme als eigene Ansicht,
+  // die übrigen Zweige unter "Weitere", plus "Alle".
+  // ---------------------------------------------------------------
+  const STAMM_KEY = 'stammbaum.stamm';
+  const MAIN_STAEMME = 4;
+  let stammList = [];          // [{key, label, count, sections:[id]}]
+  function savedStamm(){ try { return localStorage.getItem(STAMM_KEY) || ''; } catch(e){ return ''; } }
+  function saveStamm(k){ try { localStorage.setItem(STAMM_KEY, k); } catch(e){} }
+
+  function buildStammBar(forest){
+    const bar = document.getElementById('stamm-bar');
+    if (!bar) return;
+    // alle Personen-IDs eines Zweigs (Nachkommen inkl. Partner)
+    function collect(node, set){
+      set.add(node.id);
+      (node.spouses || []).forEach(sp => set.add(sp.id));
+      (node.children || []).forEach(c => collect(c, set));
+      (node.groups || []).forEach(g => { set.add(g.partner.id); g.children.forEach(c => collect(c, set)); });
+      return set;
+    }
+    const items = forest.map((root, i) => {
+      const p = PERSONS.byId[root.id];
+      const label = (p && p.nachname) || root.name;
+      const ids = collect(root, new Set());
+      // wie viele tragen den Namen des Stammvaters? (entscheidet bei gleich grossen Zweigen)
+      let same = 0; ids.forEach(id => { const q = PERSONS.byId[id]; if (q && q.nachname && q.nachname.split('-').includes(label)) same++; });
+      const kidIds = [...(root.children || []), ...(root.groups || []).flatMap(g => g.children)].map(c => c.id);
+      return { id: 'branch-' + i, label, count: countDescendants(root), ids, same, rootId: root.id, kidIds };
+    }).sort((a, b) => b.count - a.count || b.same - a.same);
+    // Zweige, die schon in einem grösseren Stamm stecken (Stammvater ist dort Partner,
+    // oder alle seine Kinder sind dort eingeheiratet), zählen nicht als eigener Stamm.
+    const main = [], rest = [];
+    items.forEach(it => {
+      const covered = main.some(m => m.ids.has(it.rootId) ||
+        (it.kidIds.length > 0 && it.kidIds.every(id => m.ids.has(id))));
+      if (main.length < MAIN_STAEMME && !covered && it.count > 0) main.push(it); else rest.push(it);
+    });
+    stammList = main.map(it => ({ key: 'n:' + it.label, label: it.label, count: it.count, sections: [it.id] }));
+    if (rest.length) stammList.push({ key: 'weitere', label: 'Weitere', count: rest.length, sections: rest.map(r => r.id), isRest: true });
+    stammList.push({ key: 'alle', label: 'Alle', count: forest.length, sections: items.map(r => r.id), isAll: true });
+
+    bar.innerHTML = '<span class="stamm-label">Stammbaum</span>' + stammList.map(st => {
+      const sub = st.isAll ? st.count + ' Zweige' : (st.isRest ? st.count + ' Zweige' : st.count + ' Nachkommen');
+      return `<button type="button" class="stamm-chip" data-stamm="${escapeHtml(st.key)}">${escapeHtml(st.label)}<small>${escapeHtml(sub)}</small></button>`;
+    }).join('');
+    bar.querySelectorAll('.stamm-chip').forEach(b => b.addEventListener('click', () => applyStamm(b.dataset.stamm, true)));
+
+    let want = savedStamm();
+    if (!stammList.some(st => st.key === want)){
+      const nyff = stammList.find(st => st.key === 'n:Nyffenegger');
+      want = nyff ? nyff.key : stammList[0].key;
+    }
+    applyStamm(want, false);
+  }
+
+  function stammOfSection(sectionId){
+    const st = stammList.find(x => !x.isAll && x.sections.includes(sectionId));
+    return st ? st.key : 'alle';
+  }
+
+  function applyStamm(key, userAction){
+    const st = stammList.find(x => x.key === key) || stammList[stammList.length - 1];
+    if (!st) return;
+    const show = new Set(st.sections);
+    main.querySelectorAll('.branch').forEach(sec => { sec.style.display = show.has(sec.id) ? '' : 'none'; });
+    document.querySelectorAll('#stamm-bar .stamm-chip').forEach(b => {
+      const on = b.dataset.stamm === st.key;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    saveStamm(st.key);
+    if (userAction){
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      document.dispatchEvent(new CustomEvent('tree:rendered'));
+    }
   }
 
   function computeChildrenOf(){
@@ -651,6 +730,7 @@
     const id = jumpSelect.value;
     if (!id) return;
     const el = document.getElementById(id);
+    if (el && el.style.display === 'none'){ applyStamm(stammOfSection(id), false); document.dispatchEvent(new CustomEvent('tree:rendered')); }
     if (el) el.scrollIntoView({behavior:'smooth', block:'start'});
   });
 
@@ -684,6 +764,13 @@
     });
     searchCount.textContent = matches.length + ' Treffer';
     if (matches.length){
+      const visible = matches.filter(c => { const sec = c.closest('.branch'); return !sec || sec.style.display !== 'none'; });
+      if (!visible.length){
+        const sec = matches[0].closest('.branch');
+        if (sec){ applyStamm(stammOfSection(sec.id), false); document.dispatchEvent(new CustomEvent('tree:rendered')); }
+      } else if (visible[0] !== matches[0]){
+        matches.splice(matches.indexOf(visible[0]), 1); matches.unshift(visible[0]);
+      }
       let p = matches[0].closest('.children-wrap.collapsed');
       while(p){
         p.classList.remove('collapsed');

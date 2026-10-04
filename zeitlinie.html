@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Zeitlinie – Stammbaum</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Alegreya:ital,wght@0,400;0,500;0,700;1,400&family=Alegreya+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --night:#0e2748; --night-deep:#091b33; --night-raised:#15365f;
+    --gold:#b8964a; --gold-soft:#ecd892; --parchment:#f4ecda; --parchment-edge:#d8c69b; --ink:#1d2433;
+    --m:#9fbde0; --w:#e6b3a8; --u:#cfc7b2;
+    --row:34px; --bar:26px;
+    --serif:'Alegreya',Georgia,serif; --sans:'Alegreya Sans','Gill Sans',sans-serif;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; min-height:100%; }
+  body{
+    font-family:var(--sans); color:var(--parchment);
+    background:linear-gradient(180deg, var(--night) 0%, var(--night-deep) 100%) fixed;
+    padding-bottom:env(safe-area-inset-bottom, 0px);
+  }
+  a{ color:var(--gold-soft); }
+
+  /* Kopf */
+  .bar{
+    position:sticky; top:0; z-index:20; background:rgba(9,27,51,.96); backdrop-filter:blur(6px);
+    border-bottom:1px solid rgba(236,216,146,.25);
+    padding:calc(env(safe-area-inset-top, 0px) + .55rem) .8rem .55rem;
+    display:flex; flex-wrap:wrap; gap:.5rem .9rem; align-items:center;
+  }
+  .bar h1{ margin:0; font-family:var(--serif); font-weight:500; font-size:1.25rem; color:var(--parchment); margin-right:.4rem; }
+  .bar label{ display:flex; gap:.35rem; align-items:center; font-size:.92rem; color:var(--gold-soft); }
+  .bar input, .bar select{
+    font:inherit; font-size:.95rem; color:var(--ink); background:var(--parchment);
+    border:1px solid var(--parchment-edge); border-radius:.45rem; padding:.3rem .5rem;
+  }
+  .bar input[type=search]{ width:13rem; max-width:52vw; }
+  .bar input[type=range]{ padding:0; width:7rem; accent-color:var(--gold-soft); background:transparent; border:0; }
+  .bar .back{ font-size:.95rem; }
+  .bar .info{ font-size:.85rem; color:rgba(244,236,218,.7); margin-left:auto; }
+
+  /* Zeitlinie */
+  #wrap{ overflow:auto; position:relative; height:calc(100vh - var(--bar-h, 64px)); height:calc(100dvh - var(--bar-h, 64px)); }
+  #canvas{ position:relative; }
+  .axis{
+    position:sticky; top:0; z-index:10; height:30px;
+    background:rgba(14,39,72,.97); border-bottom:1px solid rgba(236,216,146,.3);
+  }
+  .tick{ position:absolute; top:7px; transform:translateX(-50%); font-size:.78rem; color:rgba(244,236,218,.75); white-space:nowrap; }
+  .tick.dec{ font-weight:700; color:var(--gold-soft); }
+  .grid{ position:absolute; top:30px; bottom:0; width:1px; background:rgba(244,236,218,.07); }
+  .grid.dec{ background:rgba(244,236,218,.14); }
+  .today{ position:absolute; top:30px; bottom:0; width:2px; background:rgba(236,216,146,.55); }
+
+  .event{
+    position:absolute; top:30px; bottom:0;
+    background:repeating-linear-gradient(135deg, rgba(244,236,218,.10) 0 4px, transparent 4px 9px);
+    border-left:1px solid rgba(244,236,218,.18); border-right:1px solid rgba(244,236,218,.18);
+  }
+  .event.point{ background:rgba(244,236,218,.12); }
+  .event-label{
+    position:sticky; top:36px; z-index:6; display:inline-block; margin:6px 0 0 4px;
+    background:var(--parchment); color:var(--ink); border-radius:.35rem; padding:.2rem .45rem;
+    font-size:.72rem; line-height:1.15; box-shadow:0 2px 8px rgba(0,0,0,.35); white-space:nowrap;
+  }
+  .event-label b{ display:block; font-size:.78rem; }
+
+  .life{
+    position:absolute; height:var(--bar); border-radius:calc(var(--bar) / 2);
+    display:flex; align-items:center; gap:.35rem; padding:0 .55rem 0 .3rem;
+    color:var(--ink); font-size:.86rem; cursor:pointer; white-space:nowrap;
+    box-shadow:0 1px 0 rgba(0,0,0,.25);
+    background:var(--c);
+  }
+  .life.alive{ background:linear-gradient(90deg, var(--c) 82%, rgba(244,236,218,0)); }
+  .life.unk-end{ background:linear-gradient(90deg, var(--c) 75%, rgba(244,236,218,.15)); }
+  .life.unk-start{ border:1.5px dashed rgba(29,36,51,.5); }
+  .life.focus{ outline:2px solid var(--gold-soft); outline-offset:2px; }
+  .life:hover{ filter:brightness(1.06); }
+  .life .dot{ flex:none; width:18px; height:18px; border-radius:50%; background:rgba(255,255,255,.75); display:flex; align-items:center; justify-content:center; font-size:.72rem; color:var(--ink); }
+  .life .nm{ font-weight:700; overflow:hidden; text-overflow:ellipsis; }
+  .life .age{ margin-left:auto; padding-left:.4rem; font-size:.78rem; opacity:.85; }
+  .outside{ position:absolute; height:var(--bar); display:flex; align-items:center; font-size:.86rem; color:var(--parchment); white-space:nowrap; pointer-events:none; }
+  .outside b{ font-weight:700; }
+
+  .link{ position:absolute; width:0; border-left:1.5px solid rgba(236,216,146,.75); }
+  .link-age{
+    position:absolute; transform:translate(-50%, -50%); min-width:20px; height:16px; padding:0 4px;
+    border-radius:8px; background:var(--night-raised); border:1px solid rgba(236,216,146,.6);
+    color:var(--gold-soft); font-size:.68rem; line-height:14px; text-align:center;
+  }
+  .legend{ display:flex; gap:.8rem; align-items:center; font-size:.82rem; color:rgba(244,236,218,.8); }
+  .legend i{ display:inline-block; width:14px; height:10px; border-radius:5px; margin-right:.3rem; vertical-align:middle; }
+  #status{ padding:2rem; font-size:1.05rem; }
+  @media (max-width:640px){
+    .bar .info, .legend{ display:none; }
+    .bar h1{ font-size:1.1rem; }
+  }
+</style>
+</head>
+<body>
+<div class="bar" id="bar">
+  <a class="back" href="index.html">← Stammbaum</a>
+  <h1>Zeitlinie</h1>
+  <label>Person <input type="search" id="person" list="people" placeholder="Name eingeben" autocomplete="off"></label>
+  <datalist id="people"></datalist>
+  <label>Zeigen <select id="mode">
+    <option value="anc">Vorfahren</option>
+    <option value="both" selected>Vorfahren und Nachkommen</option>
+    <option value="desc">Nachkommen</option>
+  </select></label>
+  <label>Zoom <input type="range" id="zoom" min="3" max="20" step="1" value="8"></label>
+  <span class="legend"><span><i style="background:var(--m)"></i>Mann</span><span><i style="background:var(--w)"></i>Frau</span><span>Zahl am Strich = Alter des Elternteils bei der Geburt</span></span>
+  <span class="info" id="info"></span>
+</div>
+<div id="status">Lade Daten …</div>
+<div id="wrap" hidden><div id="canvas"></div></div>
+
+<script src="config.js"></script>
+<script src="forest_embed.js"></script>
+<script>
+(function(){
+  'use strict';
+
+  // ---------- Daten laden (wie Hauptseite) ----------
+  const CFG = window.SUPABASE_CONFIG || {};
+  const DB_READY = !!(CFG.url && CFG.anonKey && CFG.url.indexOf('DEINE-PROJECT-URL') === -1);
+  const REST = DB_READY ? CFG.url.replace(/\/$/, '') + '/rest/v1/personen' : null;
+  const num = v => (v === null || v === undefined || v === '') ? null : Number(v);
+  function normalize(r){
+    r.id = num(r.id); r.vater_id = num(r.vater_id); r.mutter_id = num(r.mutter_id);
+    if (r.vater_id === r.id) r.vater_id = null;
+    if (r.mutter_id === r.id) r.mutter_id = null;
+    return r;
+  }
+  async function loadPersons(){
+    if (DB_READY){
+      try{
+        const h = { apikey: CFG.anonKey };
+        if (!CFG.anonKey.startsWith('sb_')) h.Authorization = 'Bearer ' + CFG.anonKey;
+        const res = await fetch(REST + '?select=*', { headers: h });
+        if (res.ok){ const rows = await res.json(); if (rows.length) return rows.map(normalize); }
+      }catch(e){ console.warn(e); }
+    }
+    return (window.ALL_PERSONS || []).map(p => normalize(Object.assign({}, p)));
+  }
+
+  // ---------- Hilfen ----------
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  let P = {}, KIDS = {};
+  const NOW = new Date().getFullYear();
+  const fullName = p => [p.vorname, p.zweitname, p.nachname].filter(Boolean).join(' ') || p.name || '?';
+  function yearOf(s){ const m = String(s || '').match(/(\d{4})/); return m ? Number(m[1]) : null; }
+  const birthY = p => (p.jg ? Number(p.jg) : null) || yearOf(p.geburt);
+  const deathY = p => (p.todesjahr ? Number(p.todesjahr) : null) || yearOf(p.sterbe);
+  const dead = p => !!(p.sterbe && String(p.sterbe).trim() !== '') || !!p.todesjahr;
+  function datePart(s){ const m = String(s || '').match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/); return m ? Number(m[3]) + (Number(m[2]) - 1) / 12 + Number(m[1]) / 365 : null; }
+  const birthExact = p => datePart(p.geburt) ?? birthY(p);
+  const deathExact = p => datePart(p.sterbe) ?? deathY(p);
+
+  // Lebensspanne (mit Schätzung, wenn etwas fehlt)
+  function span(p){
+    let b = birthExact(p), est = false;
+    if (b == null){
+      const kids = (KIDS[p.id] || []).map(birthExact).filter(v => v != null);
+      if (kids.length){ b = Math.min(...kids) - 30; est = true; }
+      else {
+        const par = [P[p.vater_id], P[p.mutter_id]].filter(Boolean).map(birthExact).filter(v => v != null);
+        if (par.length){ b = Math.max(...par) + 28; est = true; }
+      }
+    }
+    if (b == null) return null;
+    let d = null, endKind = 'known';
+    if (dead(p)){
+      d = deathExact(p);
+      if (d == null){ d = Math.min(b + 65, NOW); endKind = 'unknown'; }
+    } else {
+      d = NOW; endKind = 'alive';
+      if (NOW - b > 105){ d = b + 75; endKind = 'unknown'; }   // vermutlich verstorben, Datum fehlt
+    }
+    return { b, d, est, endKind };
+  }
+
+  // ---------- Auswahl der Personen ----------
+  function ancestors(id, out, depth){
+    const p = P[id]; if (!p || depth > 14) return;
+    [p.vater_id, p.mutter_id].forEach(pid => { if (pid != null && P[pid] && !out.has(pid)){ out.add(pid); ancestors(pid, out, depth + 1); } });
+  }
+  function descendants(id, out, depth){
+    if (depth > 10) return;
+    (KIDS[id] || []).forEach(k => { if (!out.has(k)){ out.add(k); descendants(k, out, depth + 1); } });
+  }
+  function selection(id, mode){
+    const s = new Set([id]);
+    if (mode !== 'desc') ancestors(id, s, 0);
+    if (mode !== 'anc') descendants(id, s, 0);
+    return s;
+  }
+
+  // ---------- Historische Ereignisse (Schweiz und Welt) ----------
+  const EVENTS = [
+    { from: 1798, to: 1803, t: 'Helvetik', s: 'Franzoseneinfall' },
+    { from: 1847, to: 1847.99, t: 'Sonderbundskrieg', s: '1847' },
+    { from: 1848, to: 1848.99, t: 'Bundesstaat', s: '1848' },
+    { from: 1914, to: 1918.9, t: 'Erster Weltkrieg', s: '1914 – 1918' },
+    { from: 1918.5, to: 1919.3, t: 'Spanische Grippe', s: '1918 / 19' },
+    { from: 1939, to: 1945.7, t: 'Zweiter Weltkrieg', s: '1939 – 1945' },
+    { from: 1971, to: 1971.99, t: 'Frauenstimmrecht', s: '1971' }
+  ];
+
+  // ---------- Zeichnen ----------
+  const ROW = 34, BAR = 26, TOP = 30 + 46, LEFT = 24;
+  function render(){
+    const q = document.getElementById('person').value.trim();
+    const id = idFromInput(q);
+    if (id == null) return;
+    const mode = document.getElementById('mode').value;
+    const ppy = Number(document.getElementById('zoom').value);
+    const ids = [...selection(id, mode)];
+    const rows = ids.map(i => ({ p: P[i], s: span(P[i]) })).filter(r => r.s);
+    rows.sort((a, b) => a.s.b - b.s.b || (a.p.id === id ? 1 : 0));
+    const minY = Math.floor((Math.min(...rows.map(r => r.s.b)) - 8) / 10) * 10;
+    const maxY = Math.max(NOW + 2, Math.ceil((Math.max(...rows.map(r => r.s.d)) + 2) / 10) * 10);
+    const x = y => LEFT + (y - minY) * ppy;
+    const W = x(maxY) + 40, H = TOP + rows.length * ROW + 30;
+    const rowOf = {}; rows.forEach((r, i) => rowOf[r.p.id] = i);
+    const yTop = i => TOP + i * ROW;
+
+    let html = `<div class="axis" style="width:${W}px">`;
+    const step = ppy >= 12 ? 5 : 10;
+    for (let y = minY; y <= maxY; y += step){
+      html += `<span class="tick${y % 50 === 0 ? ' dec' : ''}" style="left:${x(y)}px">${y}</span>`;
+    }
+    html += `</div>`;
+    for (let y = minY; y <= maxY; y += 10) html += `<div class="grid${y % 50 === 0 ? ' dec' : ''}" style="left:${x(y)}px;height:${H - 30}px"></div>`;
+    EVENTS.filter(e => e.to >= minY && e.from <= maxY).forEach(e => {
+      const w = Math.max(3, (e.to - e.from) * ppy);
+      html += `<div class="event${w < 10 ? ' point' : ''}" style="left:${x(e.from)}px;width:${w}px;height:${H - 30}px"><span class="event-label"><b>${esc(e.t)}</b>${esc(e.s)}</span></div>`;
+    });
+    html += `<div class="today" style="left:${x(NOW + new Date().getMonth() / 12)}px;height:${H - 30}px" title="Heute"></div>`;
+
+    // Verbindungen Eltern -> Kind (bei der Geburt des Kindes)
+    rows.forEach(r => {
+      const c = r.p, ci = rowOf[c.id];
+      [c.vater_id, c.mutter_id].forEach((pid, k) => {
+        if (pid == null || rowOf[pid] == null) return;
+        const pr = rows[rowOf[pid]], pi = rowOf[pid];
+        const xx = x(r.s.b) + (k === 0 ? 3 : 9);
+        const y1 = Math.min(yTop(pi), yTop(ci)) + BAR, y2 = Math.max(yTop(pi), yTop(ci));
+        html += `<div class="link" style="left:${xx}px;top:${y1}px;height:${y2 - y1}px"></div>`;
+        if (!r.s.est && !pr.s.est){
+          const age = Math.floor(r.s.b - pr.s.b);
+          if (age > 0 && age < 80) html += `<span class="link-age" style="left:${xx}px;top:${y1 + Math.min(14, (y2 - y1) / 2)}px">${age}</span>`;
+        }
+      });
+    });
+
+    // Lebensbalken
+    rows.forEach((r, i) => {
+      const p = r.p, s = r.s;
+      const left = x(s.b), w = Math.max(18, (s.d - s.b) * ppy);
+      const col = p.geschlecht === 'm' ? 'var(--m)' : p.geschlecht === 'w' ? 'var(--w)' : 'var(--u)';
+      const cls = ['life', s.endKind === 'alive' ? 'alive' : '', s.endKind === 'unknown' ? 'unk-end' : '', s.est ? 'unk-start' : '', p.id === id ? 'focus' : ''].join(' ');
+      const age = s.endKind === 'known' ? '† ' + Math.floor(s.d - s.b)
+                : s.endKind === 'alive' ? Math.floor(s.d - s.b) + ' J.'
+                : '† ?';
+      const yrs = (s.est ? 'ca. ' : '') + Math.floor(s.b) + (s.endKind === 'alive' ? '' : ' – ' + (s.endKind === 'known' ? Math.floor(s.d) : '?'));
+      const title = fullName(p) + ' · ' + yrs;
+      const sym = p.geschlecht === 'm' ? '♂' : p.geschlecht === 'w' ? '♀' : '';
+      if (w >= 130){
+        html += `<div class="${cls}" data-pid="${p.id}" title="${esc(title)}" style="--c:${col};left:${left}px;top:${yTop(i)}px;width:${w}px">
+          <span class="dot">${sym}</span><span class="nm">${esc(fullName(p))}</span><span class="age">${esc(age)}</span></div>`;
+      } else {
+        html += `<div class="${cls}" data-pid="${p.id}" title="${esc(title)}" style="--c:${col};left:${left}px;top:${yTop(i)}px;width:${w}px"><span class="dot">${sym}</span></div>
+          <div class="outside" style="left:${left + w + 6}px;top:${yTop(i)}px"><b>${esc(fullName(p))}</b>&nbsp;· ${esc(yrs)}</div>`;
+      }
+    });
+
+    const cv = document.getElementById('canvas');
+    cv.style.width = W + 'px'; cv.style.height = H + 'px';
+    cv.innerHTML = html;
+    document.getElementById('info').textContent = rows.length + ' Personen · ' + minY + '–' + maxY;
+    // auf die gewählte Person scrollen
+    const wrap = document.getElementById('wrap');
+    const fr = rowOf[id];
+    if (fr != null){
+      wrap.scrollLeft = Math.max(0, x(rows[fr].s.b) - wrap.clientWidth * 0.35);
+      wrap.scrollTop = Math.max(0, yTop(fr) - wrap.clientHeight * 0.45);
+    }
+  }
+
+  // Person über Namen (Datalist) finden
+  let LABEL2ID = {};
+  function labelOf(p){ const b = birthY(p); return fullName(p) + (b ? ' (' + b + ')' : ''); }
+  function idFromInput(q){
+    if (LABEL2ID[q] != null) return LABEL2ID[q];
+    const low = q.toLowerCase();
+    const hit = Object.values(P).find(p => labelOf(p).toLowerCase() === low) || Object.values(P).find(p => fullName(p).toLowerCase() === low);
+    return hit ? hit.id : null;
+  }
+
+  // ---------- Start ----------
+  (async function(){
+    const rows = await loadPersons();
+    P = {}; KIDS = {};
+    rows.forEach(r => { if (r.id != null) P[r.id] = r; });
+    Object.values(P).forEach(c => [c.vater_id, c.mutter_id].forEach(pid => { if (pid != null && P[pid]) (KIDS[pid] = KIDS[pid] || []).push(c.id); }));
+
+    const dl = document.getElementById('people');
+    Object.values(P).sort((a, b) => (a.nachname || '').localeCompare(b.nachname || '', 'de') || (a.vorname || '').localeCompare(b.vorname || '', 'de'))
+      .forEach(p => { const l = labelOf(p); LABEL2ID[l] = p.id; const o = document.createElement('option'); o.value = l; dl.appendChild(o); });
+
+    const params = new URLSearchParams(location.search);
+    let start = params.has('person') ? Number(params.get('person')) : NaN;
+    if (!P[start]){
+      const dan = Object.values(P).find(p => p.vorname === 'Daniel' && p.nachname === 'Nyffenegger' && birthY(p) === 1988);
+      start = dan ? dan.id : Object.keys(P)[0];
+    }
+    const inp = document.getElementById('person');
+    inp.value = labelOf(P[start]);
+
+    document.documentElement.style.setProperty('--bar-h', document.getElementById('bar').offsetHeight + 'px');
+    window.addEventListener('resize', () => document.documentElement.style.setProperty('--bar-h', document.getElementById('bar').offsetHeight + 'px'));
+    if (window.innerWidth < 640) document.getElementById('zoom').value = 5;
+
+    inp.addEventListener('change', () => { if (idFromInput(inp.value.trim()) != null) render(); });
+    inp.addEventListener('input', () => { if (LABEL2ID[inp.value] != null) render(); });
+    document.getElementById('mode').addEventListener('change', render);
+    document.getElementById('zoom').addEventListener('input', render);
+
+    // Klick auf einen Balken: diese Person ins Zentrum, Doppelklick: Detailseite
+    document.getElementById('canvas').addEventListener('click', e => {
+      const el = e.target.closest('.life'); if (!el) return;
+      const p = P[Number(el.dataset.pid)];
+      if (labelOf(p) === inp.value){ location.href = 'index.html#/person/' + p.id; return; }
+      inp.value = labelOf(p); render();
+    });
+
+    document.getElementById('status').hidden = true;
+    document.getElementById('wrap').hidden = false;
+    render();
+  })().catch(e => { document.getElementById('status').textContent = 'Fehler beim Laden: ' + e; });
+})();
+</script>
+</body>
+</html>
