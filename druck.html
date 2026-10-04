@@ -324,6 +324,13 @@
     if (ps.some(n => parts.includes(n))) return '';
     return ' ' + esc(k.nachname);
   }
+  // Heirat eines Paars: zuerst beim Partner, der auf den anderen verweist
+  function marriageText(a, b){
+    const cands = [a, b].filter(Boolean);
+    const pick = cands.find(x => x.heirat_datum && b && a && (x.ehepartner_ids || []).includes(x === a ? b.id : a.id)) || cands.find(x => x.heirat_datum || x.heirat_ort);
+    if (!pick || !(a && b)) return '';
+    return [pick.heirat_datum, pick.heirat_ort].filter(Boolean).join(' ');
+  }
   function famHtml(cell, pageNo){
     const f = cell.f;
     const parentsDeath = [P[f.v], P[f.m]].filter(Boolean).map(deathText).filter(Boolean);
@@ -348,8 +355,9 @@
       </tr>`;
     }).join('');
     const gen = Math.max(generation(f.v), generation(f.m));
+    const marr = marriageText(P[f.v], P[f.m]);
     return `<div class="fam${cell.tall ? ' tall' : ''}" style="border-left:5px solid ${f.branch.color}">
-      <div class="ft"><b>${esc(famTitle(f))}</b><span>${gen}. Generation · ${f.kids.length} Kind${f.kids.length === 1 ? '' : 'er'}</span></div>
+      <div class="ft"><b>${esc(famTitle(f))}</b><span>${marr ? '⚭ ' + esc(marr) + ' · ' : ''}${gen}. Generation · ${f.kids.length} Kind${f.kids.length === 1 ? '' : 'er'}</span></div>
       <div class="parents">${parentBox(f.v, f)}${parentBox(f.m, f)}</div>
       <table>
         <colgroup><col style="width:17%"><col style="width:14.5%"><col style="width:14.5%"><col style="width:18%"><col style="width:16%"><col style="width:4%"><col style="width:16%"></colgroup>

@@ -91,6 +91,7 @@
     border-radius:8px; background:var(--night-raised); border:1px solid rgba(236,216,146,.6);
     color:var(--gold-soft); font-size:.68rem; line-height:14px; text-align:center;
   }
+  .ring{ position:absolute; transform:translate(-50%, -50%); z-index:3; width:18px; height:18px; border-radius:50%; background:var(--night-raised); color:var(--gold-soft); border:1px solid var(--gold-soft); font-size:.7rem; line-height:16px; text-align:center; pointer-events:auto; }
   .legend{ display:flex; gap:.8rem; align-items:center; font-size:.82rem; color:rgba(244,236,218,.8); }
   .legend i{ display:inline-block; width:14px; height:10px; border-radius:5px; margin-right:.3rem; vertical-align:middle; }
   #status{ padding:2rem; font-size:1.05rem; }
@@ -112,7 +113,7 @@
     <option value="desc">Nachkommen</option>
   </select></label>
   <label>Zoom <input type="range" id="zoom" min="3" max="20" step="1" value="8"></label>
-  <span class="legend"><span><i style="background:var(--m)"></i>Mann</span><span><i style="background:var(--w)"></i>Frau</span><span>Zahl am Strich = Alter des Elternteils bei der Geburt</span></span>
+  <span class="legend"><span><i style="background:var(--m)"></i>Mann</span><span><i style="background:var(--w)"></i>Frau</span><span>⚭ = Heirat · Zahl am Strich = Alter des Elternteils bei der Geburt</span></span>
   <span class="info" id="info"></span>
 </div>
 <div id="status">Lade Daten …</div>
@@ -276,6 +277,14 @@
         html += `<div class="${cls}" data-pid="${p.id}" title="${esc(title)}" style="--c:${col};left:${left}px;top:${yTop(i)}px;width:${w}px"><span class="dot">${sym}</span></div>
           <div class="outside" style="left:${left + w + 6}px;top:${yTop(i)}px"><b>${esc(fullName(p))}</b>&nbsp;· ${esc(yrs)}</div>`;
       }
+    });
+
+    // Heirat als Ring auf beiden Lebenslinien
+    rows.forEach((r, i) => {
+      const hy = (String(r.p.heirat_datum || '').match(/(\d{4})/) || [])[1];
+      if (!hy) return;
+      const dp = datePart(r.p.heirat_datum) ?? Number(hy);
+      html += `<span class="ring" title="Heirat ${esc(r.p.heirat_datum)}${r.p.heirat_ort ? ' in ' + esc(r.p.heirat_ort) : ''}" style="left:${x(dp)}px;top:${yTop(i) + BAR / 2}px">⚭</span>`;
     });
 
     const cv = document.getElementById('canvas');

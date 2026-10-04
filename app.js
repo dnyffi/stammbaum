@@ -22,8 +22,14 @@
       h['Authorization'] = 'Bearer ' + CFG.anonKey;
     }
     if (withPin) h['x-family-pin'] = CFG.pin || '';
+    if (withPin){ const n = editorName(); if (n) h['x-editor-name'] = encodeURIComponent(n); }
     return h;
   }
+  // Wer bearbeitet? (für den Änderungsverlauf, im Browser gemerkt)
+  function editorName(){ try { return localStorage.getItem('stammbaum.editor') || ''; } catch(e){ return ''; } }
+  function setEditorName(n){ try { localStorage.setItem('stammbaum.editor', n); } catch(e){} }
+  // Gibt es die Heiratsfelder schon in der Datenbank?
+  let HAS_HEIRAT = false;
 
   // ---------------------------------------------------------------
   // Laden: zuerst aus der Datenbank (falls config.js ausgefuellt ist),
@@ -46,6 +52,7 @@
         if (res.ok){
           const rows = await res.json();
           if (rows.length){
+            HAS_HEIRAT = rows.some(r => Object.prototype.hasOwnProperty.call(r, 'heirat_datum'));
             rows.forEach(r => { normalizeIds(r); PERSONS.byId[r.id] = r; });
             markSource('db');
             return;
@@ -113,6 +120,7 @@
       ehepartner_ids: person.ehepartner_ids && person.ehepartner_ids.length ? person.ehepartner_ids : null,
       vater_id: person.vater_id, mutter_id: person.mutter_id, bem: person.bem,
     };
+    if (HAS_HEIRAT){ body.heirat_datum = person.heirat_datum || null; body.heirat_ort = person.heirat_ort || null; }
     const headers = dbHeaders(true);
     headers['x-family-pin'] = pin;
     try {
@@ -142,6 +150,7 @@
       ehepartner_ids: person.ehepartner_ids && person.ehepartner_ids.length ? person.ehepartner_ids : null,
       vater_id: person.vater_id, mutter_id: person.mutter_id, bem: person.bem,
     };
+    if (HAS_HEIRAT){ body.heirat_datum = person.heirat_datum || null; body.heirat_ort = person.heirat_ort || null; }
     const headers = dbHeaders(true);
     headers['x-family-pin'] = pin;
     headers['Prefer'] = 'return=representation';
@@ -234,6 +243,7 @@
         ? fullName(PERSONS.byId[p.ehepartner_ids[0]]) : (p.ehepartner_raw || '');
       rows.push(['Beziehung', [p.beziehungsstatus, partnerName].filter(Boolean).join(' mit ')]);
     }
+    if (p.heirat_datum || p.heirat_ort) rows.push(['Heirat', [p.heirat_datum, p.heirat_ort ? 'in ' + p.heirat_ort : ''].filter(Boolean).join(' ')]);
     if (p.bem) rows.push(['Bemerkungen', p.bem]);
     return `<div class="detail-card" data-pid="${p.id}">
         <button class="edit-btn" data-edit-id="${p.id}" title="Bearbeiten" aria-label="Bearbeiten">&#9998;</button>
@@ -684,6 +694,14 @@
     const gPair = G('Eltern eines Kindes sind kein Paar', 'Vater und Mutter sind eingetragen, aber nicht als Partner miteinander verknüpft.');
     const gDup = G('Möglicher Doppeleintrag', 'Gleicher Vorname, passender Nachname oder Mädchenname und kein widersprechendes Geburtsjahr.');
     const gLone = G('Person ohne jede Verbindung', 'Keine Eltern, keine Kinder, kein verknüpfter Partner. Diese Personen hängen lose im Baum.');
+    const gCycle = G('Kreis in der Abstammung', 'Die Person ist über mehrere Generationen ihr eigener Vorfahre. Das ist immer ein Verknüpfungsfehler.');
+    const gSameDeath = G('Gleicher Todestag wie ein Elternteil', 'Kind und Elternteil haben dasselbe genaue Todesdatum. Kann stimmen (Unglück), ist aber oft ein Kopierfehler.');
+    const gFormat = G('Datum im falschen Format', 'Erlaubt sind TT.MM.JJJJ oder JJJJ (bei unbekanntem Tod auch "?"). Ungültige Tage wie 31.02. werden ebenfalls gemeldet.');
+    const gJg = G('Jahrgang passt nicht zum Geburtsdatum', 'Das Feld Jahrgang und das Jahr im Geburtsdatum sind verschieden.');
+    const gOld = G('Vermutlich verstorben, Todesdatum fehlt', 'Über 105 Jahre alt und ohne Todesdatum. Bitte Todesjahr eintragen oder "?" setzen.');
+    const gMarr = G('Unplausible Heirat', 'Heirat vor dem 16. Altersjahr, nach dem Tod, oder die beiden Partner haben verschiedene Heiratsdaten.');
+    const gMissing = G('Elternteil fehlt, Partner wäre bekannt', 'Nur ein Elternteil ist eingetragen, dieser hat aber genau einen verknüpften Partner. Vermutlich ist das der andere Elternteil.');
+    const gSib = G('Geschwister mit gleichem Vornamen', 'Zwei Kinder derselben Eltern heissen gleich. Früher üblich, wenn das erste Kind jung starb; sonst oft ein Doppeleintrag.');
 
     all.forEach(p => {
       const v = byId[p.vater_id], m = byId[p.mutter_id];
@@ -714,7 +732,62 @@
       const hasKids = all.some(x => x.vater_id === p.id || x.mutter_id === p.id);
       const linkedByOthers = all.some(x => (x.ehepartner_ids||[]).includes(p.id));
       if (p.vater_id == null && p.mutter_id == null && !(p.ehepartner_ids||[]).length && !hasKids && !linkedByOthers) gLone.rows.push(link(p));
+
+      // Datumsformat
+      const okDate = t => {
+        if (t == null || t === '') return true;
+        const s = String(t).trim();
+        if (s === '?' || /^(ca\.?\s*)?\d{4}$/.test(s) || /^nach\s+\d{4}$/i.test(s) || /^vor\s+\d{4}$/i.test(s)) return true;
+        const m = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+        if (!m) return false;
+        const dd = +m[1], mm = +m[2], yy = +m[3];
+        if (mm < 1 || mm > 12) return false;
+        return dd >= 1 && dd <= new Date(yy, mm, 0).getDate();
+      };
+      [['Geburt', p.geburt], ['Tod', p.sterbe], ['Heirat', p.heirat_datum]].forEach(([w, t]) => {
+        if (!okDate(t)) gFormat.rows.push(`${link(p)}: ${w} "${escapeHtml(t)}"`);
+      });
+      const gy = (String(p.geburt || '').match(/(\d{4})/) || [])[1];
+      if (p.jg && gy && Number(gy) !== Number(p.jg)) gJg.rows.push(`${link(p)}: Jahrgang ${p.jg}, Geburtsdatum ${escapeHtml(p.geburt)}`);
+      if (b && !p.sterbe && !p.todesjahr && new Date().getFullYear() - b > 105) gOld.rows.push(`${link(p)}: wäre ${new Date().getFullYear() - b} Jahre alt`);
+
+      // gleicher Todestag wie Elternteil
+      if (/^\d{1,2}\.\d{1,2}\.\d{4}$/.test(String(p.sterbe || '').trim())){
+        [v, m].forEach(x => { if (x && x.id !== p.id && String(x.sterbe || '').trim() === String(p.sterbe).trim()) gSameDeath.rows.push(`${link(p)} und ${link(x)}: beide † ${escapeHtml(p.sterbe)}`); });
+      }
+
+      // Heirat
+      const hy = yearOf(p.heirat_datum, null);
+      if (hy){
+        if (b && hy - b < 16) gMarr.rows.push(`${link(p)}: Heirat ${hy} mit ${hy - b} Jahren`);
+        if (d && hy > d) gMarr.rows.push(`${link(p)}: Heirat ${hy} nach dem Tod ${d}`);
+        const sp = byId[(p.ehepartner_ids || [])[0]];
+        if (sp && sp.id > p.id && (sp.ehepartner_ids || [])[0] === p.id && sp.heirat_datum && sp.heirat_datum !== p.heirat_datum)
+          gMarr.rows.push(`${link(p)} (${escapeHtml(p.heirat_datum)}) und ${link(sp)} (${escapeHtml(sp.heirat_datum)}): verschiedene Heiratsdaten`);
+      }
+
+      // fehlender Elternteil, Partner bekannt
+      const one = v && !m ? v : (m && !v ? m : null);
+      if (one && (one.ehepartner_ids || []).length === 1 && byId[one.ehepartner_ids[0]])
+        gMissing.rows.push(`${link(p)}: ${one === v ? 'Mutter' : 'Vater'} fehlt, vermutlich ${link(byId[one.ehepartner_ids[0]])}`);
     });
+
+    // Kreise in der Abstammung
+    all.forEach(p => {
+      const seen = new Set(); let stack = [p.vater_id, p.mutter_id], loop = false, guard = 0;
+      while (stack.length && guard++ < 5000){
+        const x = stack.pop();
+        if (x == null || !byId[x] || seen.has(x)) continue;
+        if (x === p.id){ loop = true; break; }
+        seen.add(x); stack.push(byId[x].vater_id, byId[x].mutter_id);
+      }
+      if (loop && p.vater_id !== p.id && p.mutter_id !== p.id) gCycle.rows.push(link(p));
+    });
+
+    // Geschwister mit gleichem Vornamen
+    const sibs = {};
+    all.forEach(p => { if (p.vater_id == null && p.mutter_id == null) return; const k = p.vater_id + '|' + p.mutter_id + '|' + (p.vorname || '').toLowerCase(); (sibs[k] = sibs[k] || []).push(p); });
+    Object.values(sibs).forEach(list => { if (list.length > 1 && list[0].vorname) gSib.rows.push(list.map(link).join(' und ')); });
 
     for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++){
       const a = all[i], c = all[j];
@@ -811,10 +884,37 @@
     debounceTimer = setTimeout(runSearch, 150);
   });
 
+  // Trefferliste unter dem Suchfeld: jede Person nur einmal, mit Jahrgang und Eltern
+  const searchResults = document.getElementById('search-results');
+  function renderSearchList(q){
+    if (!searchResults) return 0;
+    if (!q){ searchResults.innerHTML = ''; return 0; }
+    const words = q.split(/\s+/).filter(Boolean);
+    const hits = Object.values(PERSONS.byId)
+      .filter(p => { const n = fullName(p).toLowerCase(); return words.every(w => n.includes(w)); })
+      .sort((a, b) => fullName(a).localeCompare(fullName(b), 'de') || (a.jg || 9999) - (b.jg || 9999));
+    const byId = PERSONS.byId;
+    searchResults.innerHTML = hits.slice(0, 40).map(p => {
+      const y = p.jg || ((String(p.geburt || '').match(/(\d{4})/) || [])[1]);
+      const dy = p.todesjahr || ((String(p.sterbe || '').match(/(\d{4})/) || [])[1]);
+      const yrs = y ? (dy ? y + '–' + dy : (p.sterbe ? y + '–?' : '*' + y)) : (p.sterbe ? '†' : '');
+      const par = [byId[p.vater_id], byId[p.mutter_id]].filter(Boolean).map(x => x.vorname || fullName(x));
+      const sp = (p.ehepartner_ids || []).map(id => byId[id]).filter(Boolean).map(fullName)[0] || p.ehepartner_raw || '';
+      const sub = par.length ? 'Kind von ' + par.join(' und ') : (sp ? '⚭ ' + sp : '');
+      return `<a class="search-hit" href="#/person/${p.id}">
+          <span class="sh-name">${escapeHtml(fullName(p))}${yrs ? ` <span class="sh-yrs">${escapeHtml(yrs)}</span>` : ''}</span>
+          ${sub ? `<span class="sh-sub">${escapeHtml(sub)}</span>` : ''}
+        </a>`;
+    }).join('') + (hits.length > 40 ? `<p class="sh-more">… und ${hits.length - 40} weitere. Bitte genauer suchen.</p>` : '')
+      + (!hits.length ? '<p class="sh-more">Keine Person gefunden.</p>' : '');
+    return hits.length;
+  }
+
   function runSearch(){
     const q = searchInput.value.trim().toLowerCase();
     const allCards = document.querySelectorAll('.card');
     allCards.forEach(c => c.classList.remove('match'));
+    const nHits = renderSearchList(q);
     if (!q){ searchCount.textContent = ''; return; }
     let matches = [];
     allCards.forEach(c => {
@@ -823,7 +923,9 @@
         matches.push(c);
       }
     });
-    searchCount.textContent = matches.length + ' Treffer';
+    searchCount.textContent = nHits === 1 ? '1 Person gefunden – antippen zum Öffnen' : nHits + ' Personen gefunden – antippen zum Öffnen';
+    // im Baum nur hervorheben und hinscrollen, wenn das Menü den Baum nicht verdeckt
+    if (document.body.classList.contains('drawer-open') && !window.matchMedia('(min-width: 1100px)').matches) return;
     if (matches.length){
       const visible = matches.filter(c => { const sec = c.closest('.branch'); return !sec || sec.style.display !== 'none'; });
       if (!visible.length){
@@ -917,6 +1019,10 @@
             <label>von: (Partner)
               <input type="text" id="f-partner" list="person-datalist" placeholder="Namen tippen …" value="${escapeHtml(p.ehepartner_ids&&p.ehepartner_ids[0]!=null&&PERSONS.byId[p.ehepartner_ids[0]] ? personLabel(PERSONS.byId[p.ehepartner_ids[0]]) : (p.ehepartner_raw || ''))}">
             </label>
+            ${HAS_HEIRAT ? `<div class="row2">
+              <label>Heirat am<input type="text" id="f-heirat" placeholder="TT.MM.JJJJ oder JJJJ" value="${escapeHtml(p.heirat_datum || '')}"></label>
+              <label>Heirat in<input type="text" id="f-heiratsort" value="${escapeHtml(p.heirat_ort || '')}"></label>
+            </div>` : ''}
             <label>Kinder
               <input type="text" id="f-kinder-search" placeholder="Person suchen zum Hinzufügen …">
             </label>
@@ -931,6 +1037,7 @@
           </div>
           <div class="pin-row" id="pin-row">
             <span>&#128274;</span>
+            <input type="text" id="editor-input" placeholder="Dein Name" value="${escapeHtml(editorName())}" autocomplete="name">
             <input type="text" id="pin-input" placeholder="Familien-PIN">
             <button id="pin-confirm">Bestätigen</button>
           </div>
@@ -983,6 +1090,8 @@
 
     document.getElementById('pin-confirm').addEventListener('click', async () => {
       const pin = document.getElementById('pin-input').value.trim();
+      const edName = (document.getElementById('editor-input') || {}).value;
+      if (edName != null) setEditorName(edName.trim());
       const errEl = document.getElementById('error-msg');
       errEl.classList.remove('show');
       if (!pin){
@@ -1065,6 +1174,13 @@
       p.ehepartner_ids = match ? [match.id] : [];
 
       p.bem = document.getElementById('f-bem').value.trim() || null;
+      let heiratChanged = false;
+      if (HAS_HEIRAT){
+        const hd = document.getElementById('f-heirat').value.trim() || null;
+        const ho = document.getElementById('f-heiratsort').value.trim() || null;
+        heiratChanged = hd !== (p.heirat_datum || null) || ho !== (p.heirat_ort || null);
+        p.heirat_datum = hd; p.heirat_ort = ho;
+      }
 
       const slot = p.geschlecht === 'w' ? 'mutter_id' : 'vater_id';
       const changedChildren = [];
@@ -1112,6 +1228,15 @@
         if (!result.ok) return false;
       }
       await persistChildLinks(changedChildren, pin);
+
+      // Heiratsdaten auch beim Partner eintragen (wenn dieser auf diese Person verweist oder frei ist)
+      if (HAS_HEIRAT && heiratChanged && p.ehepartner_ids && p.ehepartner_ids[0] != null){
+        const sp = PERSONS.byId[p.ehepartner_ids[0]];
+        if (sp && (!(sp.ehepartner_ids || []).length || sp.ehepartner_ids[0] === p.id)){
+          sp.heirat_datum = p.heirat_datum; sp.heirat_ort = p.heirat_ort;
+          await persistPerson(sp, pin);
+        }
+      }
 
       route();
       if (isNew) setTimeout(() => { location.hash = '#/person/' + p.id; }, 1150);

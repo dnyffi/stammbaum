@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Änderungsverlauf – Stammbaum</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Alegreya:ital,wght@0,400;0,500;0,700;1,400&family=Alegreya+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --night:#0e2748; --night-deep:#091b33; --night-raised:#15365f;
+    --gold-soft:#ecd892; --parchment:#f4ecda; --parchment-edge:#d8c69b; --ink:#1d2433;
+    --red:#b3261e; --green:#4f6b2a;
+    --serif:'Alegreya',Georgia,serif; --sans:'Alegreya Sans','Gill Sans',sans-serif;
+  }
+  *{ box-sizing:border-box; }
+  body{ margin:0; font-family:var(--sans); color:var(--parchment); background:linear-gradient(180deg, var(--night) 0%, var(--night-deep) 100%) fixed; min-height:100vh; }
+  a{ color:var(--gold-soft); }
+  .bar{
+    position:sticky; top:0; z-index:10; background:rgba(9,27,51,.97); border-bottom:1px solid rgba(236,216,146,.25);
+    padding:calc(env(safe-area-inset-top, 0px) + .55rem) .8rem .55rem; display:flex; flex-wrap:wrap; gap:.5rem .9rem; align-items:center;
+  }
+  .bar h1{ margin:0; font-family:var(--serif); font-weight:500; font-size:1.25rem; }
+  .bar input, .bar select{ font:inherit; font-size:.95rem; color:var(--ink); background:var(--parchment); border:1px solid var(--parchment-edge); border-radius:.45rem; padding:.3rem .5rem; }
+  .bar input[type=search]{ width:13rem; max-width:55vw; }
+  main{ max-width:900px; margin:0 auto; padding:1rem .8rem 4rem; }
+  .day{ font-family:var(--serif); color:var(--gold-soft); font-size:1.1rem; margin:1.2rem 0 .5rem; border-bottom:1px solid rgba(236,216,146,.25); padding-bottom:.2rem; }
+  .entry{ background:rgba(244,236,218,.06); border:1px solid rgba(236,216,146,.22); border-radius:.6rem; padding:.6rem .75rem; margin-bottom:.5rem; }
+  .entry .head{ display:flex; flex-wrap:wrap; gap:.3rem .7rem; align-items:baseline; }
+  .entry .who{ font-weight:700; }
+  .entry .time{ font-size:.85rem; opacity:.75; }
+  .tag{ font-size:.75rem; border-radius:999px; padding:.05rem .5rem; color:#fff; }
+  .tag.neu{ background:var(--green); } .tag.geändert{ background:#1f5aa6; } .tag.gelöscht{ background:var(--red); }
+  table{ width:100%; border-collapse:collapse; margin-top:.45rem; font-size:.9rem; table-layout:fixed; }
+  td{ padding:.2rem .35rem; vertical-align:top; border-top:1px solid rgba(244,236,218,.1); word-wrap:break-word; }
+  td.f{ width:26%; color:var(--gold-soft); }
+  td.o{ color:rgba(244,236,218,.6); text-decoration:line-through; }
+  .undo{ margin-top:.45rem; font:inherit; font-size:.88rem; background:transparent; color:var(--gold-soft); border:1px solid rgba(236,216,146,.5); border-radius:.45rem; padding:.25rem .6rem; cursor:pointer; }
+  .undo:hover{ background:rgba(236,216,146,.12); }
+  .msg{ padding:1rem; border-radius:.6rem; background:rgba(244,236,218,.08); margin:1rem 0; line-height:1.45; }
+  .more{ display:block; margin:1rem auto; font:inherit; background:var(--parchment); color:var(--ink); border:0; border-radius:.5rem; padding:.5rem 1rem; cursor:pointer; }
+  dialog{ border:1px solid var(--parchment-edge); border-radius:.7rem; background:var(--parchment); color:var(--ink); max-width:24rem; width:90vw; }
+  dialog h2{ font-family:var(--serif); margin:.2rem 0 .6rem; font-size:1.2rem; }
+  dialog input{ font:inherit; width:100%; margin:.25rem 0 .55rem; padding:.4rem .5rem; border:1px solid #b9ab86; border-radius:.4rem; }
+  dialog .row{ display:flex; gap:.5rem; justify-content:flex-end; margin-top:.4rem; }
+  dialog button{ font:inherit; padding:.35rem .8rem; border-radius:.45rem; border:1px solid #b9ab86; background:#fff; cursor:pointer; }
+  dialog button.primary{ background:var(--night); color:var(--gold-soft); border-color:var(--night); }
+  dialog .err{ color:var(--red); font-size:.9rem; }
+</style>
+</head>
+<body>
+<div class="bar">
+  <a href="index.html">← Stammbaum</a>
+  <h1>Änderungsverlauf</h1>
+  <input type="search" id="q" placeholder="Person oder Bearbeiter filtern">
+  <select id="kind"><option value="">Alle Änderungen</option><option value="neu">Nur neue Personen</option><option value="geändert">Nur Änderungen</option><option value="gelöscht">Nur Löschungen</option></select>
+</div>
+<main id="out"><div class="msg">Lade Verlauf …</div></main>
+
+<dialog id="dlg">
+  <h2>Änderung rückgängig machen</h2>
+  <p id="dlg-text" style="margin:.2rem 0 .6rem"></p>
+  <label>Dein Name<input type="text" id="dlg-name" autocomplete="name"></label>
+  <label>Familien-PIN<input type="text" id="dlg-pin"></label>
+  <p class="err" id="dlg-err"></p>
+  <div class="row"><button id="dlg-cancel">Abbrechen</button><button class="primary" id="dlg-ok">Rückgängig machen</button></div>
+</dialog>
+
+<script src="config.js"></script>
+<script>
+(function(){
+  'use strict';
+  const CFG = window.SUPABASE_CONFIG || {};
+  const DB_READY = !!(CFG.url && CFG.anonKey && CFG.url.indexOf('DEINE-PROJECT-URL') === -1);
+  const BASE = DB_READY ? CFG.url.replace(/\/$/, '') + '/rest/v1/' : null;
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const out = document.getElementById('out');
+  function headers(write){
+    const h = { apikey: CFG.anonKey, 'Content-Type': 'application/json' };
+    if (!CFG.anonKey.startsWith('sb_')) h.Authorization = 'Bearer ' + CFG.anonKey;
+    return h;
+  }
+  const decodeWho = w => { try { return decodeURIComponent(w || ''); } catch(e){ return w || ''; } };
+  const FIELD = {
+    vorname: 'Vorname', zweitname: 'Zweitname', nachname: 'Nachname', maedchenname: 'Mädchenname',
+    geschlecht: 'Geschlecht', geburt: 'Geburt', jg: 'Jahrgang', geburtsort: 'Geburtsort', heimatort: 'Heimatort',
+    sterbe: 'Gestorben', todesjahr: 'Todesjahr', beziehungsstatus: 'Beziehung', ehepartner_raw: 'Partner (Text)',
+    ehepartner_ids: 'Partner (Verknüpfung)', vater_id: 'Vater', mutter_id: 'Mutter', bem: 'Bemerkungen',
+    heirat_datum: 'Heirat am', heirat_ort: 'Heirat in', kinder_ids: 'Kinder', name: 'Name'
+  };
+  const HIDE = new Set(['name', 'kinder_ids', 'updated_at', 'created_at']);
+  let PEOPLE = {}, ROWS = [], OFFSET = 0;
+  const PAGE = 150;
+  const pname = id => { const p = PEOPLE[id]; return p ? [p.vorname, p.zweitname, p.nachname].filter(Boolean).join(' ') : (id != null ? 'ID ' + id : '–'); };
+  function show(field, v){
+    if (v === null || v === undefined || v === '') return '–';
+    if (field === 'vater_id' || field === 'mutter_id') return pname(v);
+    if (field === 'ehepartner_ids') return (v || []).map(pname).join(', ') || '–';
+    if (field === 'geschlecht') return ({ m: 'männlich', w: 'weiblich', divers: 'divers' })[v] || v;
+    return typeof v === 'object' ? JSON.stringify(v) : String(v);
+  }
+
+  async function loadPeople(){
+    const r = await fetch(BASE + 'personen?select=id,vorname,zweitname,nachname', { headers: headers() });
+    if (r.ok) (await r.json()).forEach(p => PEOPLE[p.id] = p);
+  }
+  async function loadPage(){
+    const r = await fetch(BASE + 'aenderungen?select=*&order=zeit.desc,id.desc&limit=' + PAGE + '&offset=' + OFFSET, { headers: headers() });
+    if (!r.ok){
+      const t = await r.text();
+      if (/aenderungen/.test(t) || r.status === 404) throw new Error('NOTABLE');
+      throw new Error(t);
+    }
+    const rows = await r.json();
+    ROWS = ROWS.concat(rows); OFFSET += rows.length;
+    return rows.length;
+  }
+
+  function render(more){
+    const q = document.getElementById('q').value.trim().toLowerCase();
+    const kind = document.getElementById('kind').value;
+    const list = ROWS.filter(e => (!kind || e.aktion === kind) &&
+      (!q || pname(e.person_id).toLowerCase().includes(q) || decodeWho(e.wer).toLowerCase().includes(q)));
+    let html = '', lastDay = '';
+    list.forEach(e => {
+      const d = new Date(e.zeit);
+      const day = d.toLocaleDateString('de-CH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+      if (day !== lastDay){ html += `<div class="day">${esc(day)}</div>`; lastDay = day; }
+      const time = d.toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' });
+      let body = '';
+      if (e.aktion === 'geändert'){
+        const keys = Object.keys(e.neu || {}).filter(k => !HIDE.has(k));
+        if (!keys.length) return;
+        body = '<table>' + keys.map(k => `<tr><td class="f">${esc(FIELD[k] || k)}</td><td class="o">${esc(show(k, (e.alt || {})[k]))}</td><td>${esc(show(k, e.neu[k]))}</td></tr>`).join('') + '</table>'
+          + `<button class="undo" data-id="${e.id}">Rückgängig machen</button>`;
+      } else if (e.aktion === 'neu'){
+        const n = e.neu || {};
+        body = `<div style="margin-top:.3rem;font-size:.9rem;opacity:.85">${esc([n.geburt || n.jg ? '* ' + (n.geburt || n.jg) : '', n.vater_id ? 'Vater: ' + pname(n.vater_id) : '', n.mutter_id ? 'Mutter: ' + pname(n.mutter_id) : ''].filter(Boolean).join(' · '))}</div>`;
+      } else {
+        const o = e.alt || {};
+        body = `<div style="margin-top:.3rem;font-size:.9rem;opacity:.85">Gelöscht: ${esc([o.vorname, o.nachname].filter(Boolean).join(' '))}</div>`;
+      }
+      html += `<div class="entry">
+        <div class="head"><span class="tag ${esc(e.aktion)}">${esc(e.aktion)}</span>
+          <a href="index.html#/person/${esc(e.person_id)}" class="who">${esc(e.aktion === 'gelöscht' ? [((e.alt||{}).vorname), ((e.alt||{}).nachname)].filter(Boolean).join(' ') : pname(e.person_id))}</a>
+          <span class="time">${esc(time)} · von ${esc(decodeWho(e.wer) || 'unbekannt')}</span></div>
+        ${body}</div>`;
+    });
+    if (!list.length) html = '<div class="msg">Noch keine Änderungen für diese Auswahl.</div>';
+    if (more) html += '<button class="more" id="more">Ältere Änderungen laden</button>';
+    out.innerHTML = html;
+    const mb = document.getElementById('more');
+    if (mb) mb.addEventListener('click', async () => { mb.disabled = true; const n = await loadPage(); render(n === PAGE); });
+    out.querySelectorAll('.undo').forEach(b => b.addEventListener('click', () => openUndo(Number(b.dataset.id))));
+  }
+
+  // Rückgängig: alte Werte der geänderten Felder zurückschreiben (wird selbst wieder protokolliert)
+  const dlg = document.getElementById('dlg');
+  let undoEntry = null;
+  function openUndo(id){
+    undoEntry = ROWS.find(e => e.id === id);
+    if (!undoEntry) return;
+    const keys = Object.keys(undoEntry.alt || {}).filter(k => !HIDE.has(k));
+    document.getElementById('dlg-text').textContent = pname(undoEntry.person_id) + ': ' + keys.map(k => FIELD[k] || k).join(', ') + ' wieder auf den alten Wert setzen.';
+    try { document.getElementById('dlg-name').value = localStorage.getItem('stammbaum.editor') || ''; } catch(e){}
+    document.getElementById('dlg-err').textContent = '';
+    dlg.showModal();
+  }
+  document.getElementById('dlg-cancel').addEventListener('click', () => dlg.close());
+  document.getElementById('dlg-ok').addEventListener('click', async () => {
+    const pin = document.getElementById('dlg-pin').value.trim();
+    const name = document.getElementById('dlg-name').value.trim();
+    const err = document.getElementById('dlg-err');
+    if (!pin){ err.textContent = 'Bitte PIN eingeben.'; return; }
+    try { localStorage.setItem('stammbaum.editor', name); } catch(e){}
+    const body = {};
+    Object.keys(undoEntry.alt || {}).filter(k => !HIDE.has(k)).forEach(k => body[k] = undoEntry.alt[k]);
+    const h = headers(true); h['x-family-pin'] = pin; if (name) h['x-editor-name'] = encodeURIComponent(name + ' (rückgängig)');
+    const r = await fetch(BASE + 'personen?id=eq.' + undoEntry.person_id, { method: 'PATCH', headers: h, body: JSON.stringify(body) });
+    if (!r.ok){ err.textContent = 'Nicht gespeichert: PIN falsch oder keine Verbindung.'; return; }
+    dlg.close();
+    ROWS = []; OFFSET = 0; await loadPage(); render(ROWS.length === PAGE);
+  });
+
+  document.getElementById('q').addEventListener('input', () => render(ROWS.length % PAGE === 0 && ROWS.length > 0));
+  document.getElementById('kind').addEventListener('change', () => render(ROWS.length % PAGE === 0 && ROWS.length > 0));
+
+  (async function(){
+    if (!DB_READY){ out.innerHTML = '<div class="msg">Keine Datenbank verbunden. Der Verlauf ist nur mit Datenbank verfügbar.</div>'; return; }
+    const params = new URLSearchParams(location.search);
+    await loadPeople();
+    if (params.get('person') && PEOPLE[params.get('person')]) document.getElementById('q').value = pname(Number(params.get('person')));
+    try {
+      const n = await loadPage();
+      render(n === PAGE);
+    } catch(e){
+      out.innerHTML = e.message === 'NOTABLE'
+        ? '<div class="msg">Der Änderungsverlauf ist in der Datenbank noch nicht eingerichtet. Bitte zuerst das SQL-Skript „stammbaum_erweiterung_heirat_verlauf.sql" im Supabase SQL Editor ausführen.</div>'
+        : '<div class="msg">Fehler beim Laden: ' + esc(e.message) + '</div>';
+    }
+  })();
+})();
+</script>
+</body>
+</html>

@@ -85,6 +85,17 @@
   .stamm-select:focus-visible{ outline:2px solid var(--gold-soft); outline-offset:2px; }
   .stamm-select option{ color:#1d2433; background:#f4ecda; font-style:normal; }
   @media (max-width:520px){ .stamm-select{ font-size:.82rem; } }
+  .search-results{ display:flex; flex-direction:column; gap:.35rem; margin-top:.5rem; max-height:50vh; overflow-y:auto; }
+  .search-hit{
+    display:flex; flex-direction:column; gap:.1rem; text-decoration:none;
+    background:rgba(244,236,218,.08); border:1px solid rgba(236,216,146,.3); border-radius:.55rem;
+    padding:.5rem .7rem; color:var(--parchment);
+  }
+  .search-hit:hover, .search-hit:focus-visible{ background:rgba(244,236,218,.16); border-color:var(--gold-soft); }
+  .search-hit .sh-name{ font-weight:700; }
+  .search-hit .sh-yrs{ font-weight:400; color:var(--gold-soft); font-size:.9em; }
+  .search-hit .sh-sub{ font-size:.85rem; color:rgba(244,236,218,.75); }
+  .sh-more{ font-size:.85rem; color:rgba(244,236,218,.7); margin:.2rem 0 0; }
   .top-actions{ display:flex; gap:.4rem; }
 
   /* ---------- Seitenmenue (wie GitHub) ---------- */
@@ -452,6 +463,7 @@
       <h2>Person suchen</h2>
       <input type="text" id="search" placeholder="Name eingeben" autocomplete="off" enterkeyhint="search">
       <span id="search-count"></span>
+      <div id="search-results" class="search-results"></div>
     </section>
     <section class="jump-section">
       <h2>Zu Familienzweig springen</h2>
@@ -462,6 +474,8 @@
       <a class="menu-link" href="#/pruefung">Datenprüfung <span id="check-count" class="badge"></span></a>
       <a class="menu-link" href="#" id="newPerson">＋ Neue Person erfassen</a>
       <a class="menu-link" href="zeitlinie.html">Zeitlinie</a>
+      <a class="menu-link" href="orte.html">Herkunft und Ortschaften</a>
+      <a class="menu-link" href="verlauf.html">Änderungsverlauf</a>
       <a class="menu-link" href="druck.html">Druckversion</a>
     </section>
     <section>
@@ -472,7 +486,6 @@
     <section>
       <h2>Bald verfügbar</h2>
       <ul class="coming">
-        <li>Herkunft und Ortschaften</li>
         <li>Wappen</li>
         <li>Auswertungen</li>
       </ul>

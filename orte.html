@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Herkunft und Ortschaften – Stammbaum</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Alegreya:ital,wght@0,400;0,500;0,700;1,400&family=Alegreya+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --night:#0e2748; --night-deep:#091b33; --night-raised:#15365f;
+    --gold-soft:#ecd892; --parchment:#f4ecda; --parchment-edge:#d8c69b; --ink:#1d2433;
+    --c-geb:#c99a22; --c-heim:#1f5aa6; --c-wohn:#4f6b2a; --c-tod:#7a4b6e;
+    --serif:'Alegreya',Georgia,serif; --sans:'Alegreya Sans','Gill Sans',sans-serif;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; height:100%; }
+  body{ font-family:var(--sans); color:var(--parchment); background:var(--night-deep); display:flex; flex-direction:column; }
+  a{ color:var(--gold-soft); }
+  .bar{
+    background:rgba(9,27,51,.97); border-bottom:1px solid rgba(236,216,146,.25);
+    padding:calc(env(safe-area-inset-top, 0px) + .55rem) .8rem .55rem;
+    display:flex; flex-wrap:wrap; gap:.5rem .9rem; align-items:center; z-index:1000;
+  }
+  .bar h1{ margin:0; font-family:var(--serif); font-weight:500; font-size:1.25rem; }
+  .bar .types{ display:flex; gap:.4rem; flex-wrap:wrap; }
+  .bar .types label{
+    display:flex; gap:.35rem; align-items:center; font-size:.9rem; cursor:pointer;
+    border:1px solid rgba(244,236,218,.35); border-radius:999px; padding:.2rem .6rem;
+  }
+  .bar .types i{ width:11px; height:11px; border-radius:50%; display:inline-block; }
+  .bar input[type=search]{ font:inherit; font-size:.95rem; color:var(--ink); background:var(--parchment); border:1px solid var(--parchment-edge); border-radius:.45rem; padding:.3rem .5rem; width:12rem; max-width:50vw; }
+  .bar .info{ font-size:.85rem; opacity:.75; margin-left:auto; }
+  .layout{ flex:1; min-height:0; display:grid; grid-template-columns:1fr 340px; }
+  #map{ min-height:0; height:100%; background:#d9d3c4; }
+  .side{ overflow-y:auto; background:var(--night); border-left:1px solid rgba(236,216,146,.2); padding:.6rem .7rem 2rem; }
+  .side h2{ font-family:var(--serif); font-weight:500; font-size:1.1rem; margin:.3rem 0 .5rem; color:var(--gold-soft); }
+  .place{ border:1px solid rgba(236,216,146,.25); border-radius:.55rem; padding:.45rem .6rem; margin-bottom:.4rem; cursor:pointer; background:rgba(244,236,218,.05); }
+  .place:hover, .place.on{ background:rgba(244,236,218,.13); border-color:var(--gold-soft); }
+  .place .nm{ font-weight:700; display:flex; justify-content:space-between; gap:.5rem; }
+  .place .nm span{ font-weight:400; color:var(--gold-soft); font-size:.9rem; white-space:nowrap; }
+  .place .chips{ display:flex; gap:.3rem; flex-wrap:wrap; margin-top:.2rem; font-size:.78rem; }
+  .place .chips b{ font-weight:500; border-radius:999px; padding:0 .45rem; color:#fff; }
+  .place .people{ display:none; margin:.4rem 0 0; padding:0; list-style:none; font-size:.88rem; line-height:1.45; }
+  .place.on .people{ display:block; }
+  .place .people small{ opacity:.7; }
+  .note{ font-size:.82rem; opacity:.75; margin:.6rem 0; }
+  .leaflet-popup-content{ font-family:var(--sans); font-size:.9rem; }
+  .leaflet-popup-content b{ font-family:var(--serif); font-size:1.05rem; }
+  .pin{ border-radius:50%; border:2px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,.5); display:flex; align-items:center; justify-content:center; color:#fff; font:700 12px/1 var(--sans); }
+  #status{ padding:2rem; }
+  @media (max-width:760px){
+    .layout{ grid-template-columns:1fr; grid-template-rows:55% 45%; }
+    .side{ border-left:0; border-top:1px solid rgba(236,216,146,.25); }
+    .bar .info{ display:none; }
+  }
+</style>
+</head>
+<body>
+<div class="bar">
+  <a href="index.html">← Stammbaum</a>
+  <h1>Herkunft und Ortschaften</h1>
+  <div class="types">
+    <label><input type="checkbox" data-t="geb" checked><i style="background:var(--c-geb)"></i>Geburtsort</label>
+    <label><input type="checkbox" data-t="heim" checked><i style="background:var(--c-heim)"></i>Heimatort</label>
+    <label><input type="checkbox" data-t="wohn" checked><i style="background:var(--c-wohn)"></i>Wohnort</label>
+    <label><input type="checkbox" data-t="tod" checked><i style="background:var(--c-tod)"></i>Sterbeort</label>
+  </div>
+  <input type="search" id="q" placeholder="Ort oder Name filtern">
+  <span class="info" id="info"></span>
+</div>
+<div id="status">Lade Daten …</div>
+<div class="layout" id="layout" hidden>
+  <div id="map"></div>
+  <div class="side">
+    <h2>Ortschaften</h2>
+    <div id="list"></div>
+    <p class="note" id="note"></p>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="config.js"></script>
+<script src="forest_embed.js"></script>
+<script>
+(function(){
+  'use strict';
+  const CFG = window.SUPABASE_CONFIG || {};
+  const DB_READY = !!(CFG.url && CFG.anonKey && CFG.url.indexOf('DEINE-PROJECT-URL') === -1);
+  const REST = DB_READY ? CFG.url.replace(/\/$/, '') + '/rest/v1/personen' : null;
+  async function loadPersons(){
+    if (DB_READY){
+      try{
+        const h = { apikey: CFG.anonKey };
+        if (!CFG.anonKey.startsWith('sb_')) h.Authorization = 'Bearer ' + CFG.anonKey;
+        const res = await fetch(REST + '?select=*', { headers: h });
+        if (res.ok){ const rows = await res.json(); if (rows.length) return rows; }
+      }catch(e){ console.warn(e); }
+    }
+    return (window.ALL_PERSONS || []).map(p => Object.assign({}, p));
+  }
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const fullName = p => [p.vorname, p.zweitname, p.nachname].filter(Boolean).join(' ') || p.name || '?';
+  const yearOf = s => { const m = String(s || '').match(/(\d{4})/); return m ? Number(m[1]) : null; };
+
+  // Bekannte Orte (Koordinaten), der Rest wird über OpenStreetMap gesucht und gemerkt
+  const KNOWN = {
+    'huttwil':[47.1150,7.8480], 'nyffenegg':[47.1050,7.8750], 'nyffel':[47.1080,7.8650],
+    'dürrenroth':[47.0905,7.7900], 'sumiswald':[47.0280,7.7450], 'eriswil':[47.0790,7.8520],
+    'kirchberg':[47.0850,7.5830], 'kirchberg be':[47.0850,7.5830], 'heimiswil':[47.0670,7.6670],
+    'lützelflüh':[47.0080,7.6900], 'rohrbach':[47.1600,7.8150], 'rohrbach be':[47.1600,7.8150],
+    'zofingen':[47.2876,7.9455], 'madretsch':[47.1310,7.2580], 'biel':[47.1368,7.2468],
+    'wohlen be':[46.9710,7.3570], 'gurbrü':[46.9650,7.2150], 'gündlischwand':[46.6320,7.9130],
+    'zweilütschinen':[46.6300,7.9020], 'grindelwald':[46.6240,8.0410], 'interlaken':[46.6863,7.8632],
+    'lotzwil':[47.1910,7.7900], 'aarwangen':[47.2390,7.7690], 'maschwanden':[47.2340,8.4270],
+    'obfelden':[47.2640,8.4220], 'trub':[46.9420,7.8790], 'lommiswil':[47.2240,7.4710],
+    'tecknau':[47.4520,7.8870], 'sissach':[47.4640,7.8120], 'ormalingen':[47.4700,7.8730],
+    'uster':[47.3470,8.7210], 'lourdes':[43.0947,-0.0459], 'toulouse':[43.6047,1.4442],
+    'la turbie':[43.7450,7.4000], 'seattle':[47.6062,-122.3321], 'dijon':[47.3220,5.0415],
+    'langnau':[46.9400,7.7870], 'langenthal':[47.2150,7.7930], 'burgdorf':[47.0590,7.6270],
+    'bern':[46.9480,7.4474], 'olten':[47.3500,7.9030], 'bülach':[47.5210,8.5400], 'zürich':[47.3769,8.5417], 'affoltern am albis':[47.2770,8.4500]
+  };
+  const CACHE_KEY = 'stammbaum.geo.v1';
+  let CACHE = {}; try { CACHE = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}'); } catch(e){}
+  const saveCache = () => { try { localStorage.setItem(CACHE_KEY, JSON.stringify(CACHE)); } catch(e){} };
+  const keyOf = name => name.toLowerCase().replace(/\s+/g, ' ').trim();
+  const shortKey = name => keyOf(name).replace(/\s+(be|zh|so|ag|bl|bs|lu|fr|vd|ge|sg|gr|ti|vs|ne|ju|tg|sh|zg|sz|ur|ow|nw|gl|ar|ai)$/, '').replace(/\s*\(.*\)$/, '');
+  function coordsOf(name){
+    const k = keyOf(name), s = shortKey(name);
+    return KNOWN[k] || KNOWN[s] || CACHE[k] || null;
+  }
+  async function geocode(name){
+    const k = keyOf(name);
+    if (CACHE[k] !== undefined) return CACHE[k];
+    try{
+      const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&accept-language=de&q=' + encodeURIComponent(name.replace(/\s+(BE|ZH|SO|AG|BL|LU)$/i, ' $1 Schweiz'));
+      const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+      const j = await res.json();
+      CACHE[k] = j && j[0] ? [Number(j[0].lat), Number(j[0].lon)] : null;
+    }catch(e){ CACHE[k] = null; }
+    saveCache();
+    return CACHE[k];
+  }
+
+  // Orte aus den Personendaten sammeln
+  const TYPES = { geb: 'Geburtsort', heim: 'Heimatort', wohn: 'Wohnort', tod: 'Sterbeort' };
+  function clean(s){ return String(s || '').replace(/[.;,]+$/, '').replace(/\s+/g, ' ').trim(); }
+  function placesOf(p){
+    const out = [];
+    if (p.geburtsort) out.push(['geb', clean(p.geburtsort)]);
+    if (p.heimatort) out.push(['heim', clean(p.heimatort)]);
+    const bem = String(p.bem || '');
+    const re1 = /wohnhaft\s+(?:in|zu|im|auf)\s+([A-ZÄÖÜ][\wäöüéèàÄÖÜ-]+(?:\s+[A-ZÄÖÜ][\wäöüéèà-]+)?)/g;
+    const re2 = /(?:gest\.|gestorben)\s+in\s+([A-ZÄÖÜ][\wäöüéèàÄÖÜ-]+(?:\s+[A-ZÄÖÜ][\wäöüéèà-]+)?)/gi;
+    const re3 = /\b(?:zu|in der)\s+(Nyffenegg|Nyffel)\b/g;
+    let m;
+    while ((m = re1.exec(bem))) out.push(['wohn', clean(m[1])]);
+    while ((m = re2.exec(bem))) out.push(['tod', clean(m[1])]);
+    while ((m = re3.exec(bem))) out.push(['wohn', clean(m[1])]);
+    return out;
+  }
+
+  let MAP, LAYER, PLACES = [];
+  function build(rows){
+    const byPlace = {};
+    rows.forEach(p => placesOf(p).flatMap(([t, n]) => n.split(/\s*\/\s*|\s+und\s+/).map(x => [t, clean(x)])).forEach(([t, name]) => {
+      if (!name || name.length < 3 || /^(hier|der|dem)$/i.test(name)) return;
+      const k = shortKey(name);
+      const pl = byPlace[k] = byPlace[k] || { key: k, name, people: [], types: { geb: 0, heim: 0, wohn: 0, tod: 0 } };
+      if (name.length < pl.name.length) pl.name = name;
+      if (!pl.people.some(x => x.p.id === p.id && x.t === t)) { pl.people.push({ p, t }); pl.types[t]++; }
+    }));
+    PLACES = Object.values(byPlace).sort((a, b) => b.people.length - a.people.length);
+  }
+
+  function activeTypes(){ return new Set([...document.querySelectorAll('.types input:checked')].map(i => i.dataset.t)); }
+  function visible(){
+    const at = activeTypes(), q = document.getElementById('q').value.trim().toLowerCase();
+    return PLACES.map(pl => {
+      const ppl = pl.people.filter(x => at.has(x.t) && (!q || pl.name.toLowerCase().includes(q) || fullName(x.p).toLowerCase().includes(q)));
+      return { pl, ppl };
+    }).filter(x => x.ppl.length);
+  }
+  function mainType(ppl){ const c = {}; ppl.forEach(x => c[x.t] = (c[x.t] || 0) + 1); return Object.keys(c).sort((a, b) => c[b] - c[a])[0]; }
+  const COLOR = { geb: '#c99a22', heim: '#1f5aa6', wohn: '#4f6b2a', tod: '#7a4b6e' };
+
+  function peopleHtml(ppl){
+    const sorted = [...ppl].sort((a, b) => (yearOf(a.p.geburt) || a.p.jg || 9999) - (yearOf(b.p.geburt) || b.p.jg || 9999));
+    return sorted.map(x => {
+      const y = x.p.jg || yearOf(x.p.geburt);
+      return `<li><a href="index.html#/person/${x.p.id}">${esc(fullName(x.p))}</a>${y ? ' <small>*' + y + '</small>' : ''} <small>· ${TYPES[x.t]}</small></li>`;
+    }).join('');
+  }
+
+  const MARKERS = {};
+  function render(){
+    const vis = visible();
+    LAYER.clearLayers();
+    const list = document.getElementById('list');
+    let missing = 0;
+    list.innerHTML = vis.map(({ pl, ppl }) => {
+      const chips = Object.keys(TYPES).map(t => { const n = ppl.filter(x => x.t === t).length; return n ? `<b style="background:${COLOR[t]}">${TYPES[t]} ${n}</b>` : ''; }).join('');
+      const c = coordsOf(pl.name);
+      if (!c) missing++;
+      return `<div class="place" data-k="${esc(pl.key)}">
+        <div class="nm">${esc(pl.name)}<span>${ppl.length} ${ppl.length === 1 ? 'Person' : 'Personen'}${c ? '' : ' · ohne Karte'}</span></div>
+        <div class="chips">${chips}</div>
+        <ul class="people">${peopleHtml(ppl)}</ul>
+      </div>`;
+    }).join('') || '<p class="note">Keine Orte für diese Auswahl.</p>';
+    const bounds = [];
+    vis.forEach(({ pl, ppl }) => {
+      const c = coordsOf(pl.name); if (!c) return;
+      const size = Math.min(44, 18 + Math.sqrt(ppl.length) * 6);
+      const icon = L.divIcon({ className: '', html: `<div class="pin" style="width:${size}px;height:${size}px;background:${COLOR[mainType(ppl)]}">${ppl.length}</div>`, iconSize: [size, size], iconAnchor: [size / 2, size / 2] });
+      const mk = L.marker(c, { icon }).addTo(LAYER)
+        .bindPopup(`<b>${esc(pl.name)}</b><ul style="margin:.4rem 0 0;padding-left:1rem">${peopleHtml(ppl)}</ul>`, { maxHeight: 260 });
+      MARKERS[pl.key] = mk; bounds.push(c);
+    });
+    document.getElementById('info').textContent = vis.length + ' Orte · ' + vis.reduce((n, x) => n + x.ppl.length, 0) + ' Einträge';
+    document.getElementById('note').textContent = missing ? missing + ' Orte konnten (noch) nicht auf der Karte gefunden werden.' : '';
+    list.querySelectorAll('.place').forEach(el => el.addEventListener('click', e => {
+      if (e.target.closest('a')) return;
+      const on = el.classList.toggle('on');
+      const mk = MARKERS[el.dataset.k];
+      if (on && mk){ MAP.setView(mk.getLatLng(), Math.max(MAP.getZoom(), 11)); mk.openPopup(); }
+    }));
+    return bounds;
+  }
+
+  (async function(){
+    const rows = await loadPersons();
+    build(rows);
+    document.getElementById('status').hidden = true;
+    document.getElementById('layout').hidden = false;
+    MAP = L.map('map', { zoomControl: true }).setView([46.9, 7.8], 8);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '&copy; OpenStreetMap-Mitwirkende' }).addTo(MAP);
+    LAYER = L.layerGroup().addTo(MAP);
+    const b = render();
+    if (b.length) MAP.fitBounds(b, { padding: [30, 30], maxZoom: 10 });
+    document.querySelectorAll('.types input').forEach(i => i.addEventListener('change', render));
+    document.getElementById('q').addEventListener('input', render);
+    // unbekannte Orte nacheinander nachschlagen (OpenStreetMap erlaubt 1 Anfrage pro Sekunde)
+    const unknown = PLACES.filter(pl => !coordsOf(pl.name) && CACHE[keyOf(pl.name)] === undefined);
+    for (const pl of unknown){
+      await geocode(pl.name);
+      render();
+      await new Promise(r => setTimeout(r, 1100));
+    }
+  })().catch(e => { document.getElementById('status').textContent = 'Fehler beim Laden: ' + e; });
+})();
+</script>
+</body>
+</html>
