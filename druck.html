@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Druckversion – Stammbaum</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Alegreya:wght@400;500;700&family=Alegreya+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --navy:#13294B; --gold:#B08A2E; --ink:#1b1b1b; --soft:#444; --rule:#c4bdab;
+    --card:#F7F4EC; --flag:#FCE9C8; --fs:13.3px;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; background:#5a5f68; }
+  body{ font-family:'Alegreya Sans','Gill Sans',sans-serif; color:var(--ink); }
+
+  /* ---------- Bedienleiste (nur Bildschirm) ---------- */
+  .toolbar{
+    position:sticky; top:0; z-index:10; background:#0f1d33; color:#f4ecda;
+    display:flex; flex-wrap:wrap; gap:.6rem 1rem; align-items:center; padding:.7rem 1rem;
+  }
+  .toolbar a{ color:#e6c97a; }
+  .toolbar label{ display:flex; gap:.4rem; align-items:center; font-size:.95rem; }
+  .toolbar select, .toolbar button, .toolbar input{ font:inherit; padding:.35rem .5rem; border-radius:4px; border:1px solid #8a7a52; }
+  .toolbar button{ background:#e6c97a; color:#13294B; font-weight:700; cursor:pointer; border-color:#e6c97a; }
+  .toolbar .info{ font-size:.9rem; opacity:.85; }
+  #status{ color:#f4ecda; padding:2rem; font-size:1.1rem; }
+
+  /* ---------- Seiten ---------- */
+  .page{
+    width:297mm; height:210mm; overflow:hidden; background:#fff; position:relative;
+    margin:12px auto; box-shadow:0 4px 18px rgba(0,0,0,.35);
+    padding:8mm 10mm 6.5mm 12mm; display:flex; flex-direction:column; gap:7px;
+    font-size:var(--fs); line-height:1.3;
+  }
+  .page .stripe{ position:absolute; left:0; top:0; bottom:0; width:3.5mm; }
+  .phead{ display:flex; justify-content:space-between; align-items:flex-end; border-bottom:2px solid var(--gold); padding-bottom:4px; }
+  .phead h1{ margin:0; font-family:'Alegreya',Georgia,serif; font-size:1.65em; color:var(--navy); line-height:1.1; }
+  .phead .legend{ font-size:.9em; color:var(--soft); }
+  .pfoot{ margin-top:auto; display:flex; justify-content:space-between; border-top:1px solid #c9c2b0; padding-top:4px; font-size:.9em; color:var(--soft); }
+
+  /* Familienraster 2 x 2 */
+  .grid{ flex:1; min-height:0; display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:7px 12px; }
+  .fam{ border:1px solid #c9c2b0; border-radius:4px; padding:6px 8px; display:flex; flex-direction:column; gap:4px; min-height:0; overflow:hidden; }
+  .fam.tall{ grid-row:span 2; }
+  .fam .ft{ display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+  .fam .ft b{ font-family:'Alegreya',Georgia,serif; font-size:1.25em; color:var(--navy); line-height:1.1; }
+  .fam .ft span{ font-size:.85em; color:#555; white-space:nowrap; }
+  .parents{ display:flex; gap:6px; }
+  .pbox{ flex:1; min-width:0; border:1px solid var(--navy); border-radius:4px; padding:3px 7px; background:var(--card); }
+  .pbox .n{ font-family:'Alegreya',Georgia,serif; font-weight:700; color:var(--navy); font-size:1.1em; }
+  .pbox .s{ color:var(--soft); font-size:.9em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ok{ display:flex; gap:5px; align-items:center; font-size:.9em; }
+  .ok .line{ flex:1; border-bottom:1px solid #999; height:.9em; }
+  .cb{ width:11px; height:11px; border:1.2px solid #333; border-radius:2px; flex:none; }
+  td .cb{ margin:0 auto; }
+  table{ width:100%; border-collapse:collapse; table-layout:fixed; }
+  th{ background:var(--navy); color:#fff; font-weight:500; text-align:left; padding:2px 4px; font-size:.92em; }
+  td{ padding:2px 4px; border-bottom:1px solid var(--rule); vertical-align:top; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  tr:nth-child(even) td{ background:#FAF8F3; }
+  td.flag{ background:var(--flag) !important; }
+  td.k{ font-weight:700; }
+  td.bem{ color:var(--soft); font-size:.92em; }
+  .more{ display:flex; gap:6px; align-items:flex-end; color:var(--navy); font-weight:700; font-size:.92em; margin-top:auto; }
+  .more .line{ flex:1; border-bottom:1px solid #999; height:1em; }
+
+  /* Deckblatt */
+  .cover h1{ font-size:2.6em; }
+  .ladder{ display:grid; gap:6px; }
+  .rung{ border:1.5px solid var(--navy); border-radius:5px; padding:7px 7px; background:var(--card); display:flex; flex-direction:column; gap:2px; }
+  .rung.me{ border-color:var(--gold); background:#FBF3DF; }
+  .rung .g{ font-size:.85em; color:#5a5a5a; }
+  .rung .n{ font-family:'Alegreya',Georgia,serif; font-weight:700; color:var(--navy); font-size:1.15em; line-height:1.15; }
+  .twocol{ display:grid; grid-template-columns:1.25fr 1fr; gap:22px; }
+  .twocol h2{ margin:0 0 6px; font-family:'Alegreya',Georgia,serif; font-size:1.4em; color:var(--navy); }
+  .step{ display:flex; gap:10px; align-items:flex-start; margin-bottom:6px; font-size:1.1em; line-height:1.4; }
+  .step i{ font-style:normal; flex:none; width:22px; height:22px; border-radius:50%; background:var(--navy); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; }
+  .branches{ display:grid; grid-template-columns:1fr 1fr; gap:4px 14px; }
+  .branches div{ display:flex; gap:8px; align-items:center; }
+  .branches .dot{ width:13px; height:13px; border-radius:2px; flex:none; }
+
+  /* Register */
+  .reg{ flex:1; min-height:0; display:grid; grid-template-columns:repeat(5,1fr); gap:0 16px; line-height:1.42; }
+  .reg .col{ display:flex; flex-direction:column; min-width:0; }
+  .reg .row{ display:flex; justify-content:space-between; gap:6px; }
+  .reg .row span:first-child{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .reg .row span:last-child{ white-space:nowrap; color:var(--soft); }
+  .reg .letter{ font-family:'Alegreya',Georgia,serif; font-weight:700; color:var(--gold); font-size:1.15em; }
+
+  @page{ size:A4 landscape; margin:0; }
+  @media print{
+    html,body{ background:#fff; }
+    .toolbar, #status{ display:none !important; }
+    .page{ margin:0; box-shadow:none; height:209.5mm; break-after:page; page-break-after:always; }
+    .page:last-child{ break-after:auto; page-break-after:auto; }
+    *{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  }
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <a href="index.html">← Zurück zum Stammbaum</a>
+  <label>Zweig <select id="branch"><option value="all">Alle Zweige</option></select></label>
+  <label>Schrift <select id="fs">
+    <option value="12">9 pt</option><option value="13.3" selected>10 pt</option><option value="14.7">11 pt</option>
+  </select></label>
+  <label>Stammlinie von <select id="anchor"></select></label>
+  <button id="print" type="button">Drucken / als PDF speichern</button>
+  <span class="info" id="info"></span>
+</div>
+<div id="status">Lade Daten …</div>
+<div id="pages"></div>
+
+<script src="config.js"></script>
+<script src="forest_embed.js"></script>
+<script>
+(function(){
+  'use strict';
+
+  // ---------------------------------------------------------------
+  // Daten laden (gleich wie die Hauptseite): zuerst Datenbank, sonst eingebettete Daten
+  // ---------------------------------------------------------------
+  const CFG = window.SUPABASE_CONFIG || {};
+  const DB_READY = !!(CFG.url && CFG.anonKey && CFG.url.indexOf('DEINE-PROJECT-URL') === -1);
+  const REST = DB_READY ? CFG.url.replace(/\/$/, '') + '/rest/v1/personen' : null;
+
+  function headers(){
+    const h = { apikey: CFG.anonKey };
+    if (!CFG.anonKey || !CFG.anonKey.startsWith('sb_')) h['Authorization'] = 'Bearer ' + CFG.anonKey;
+    return h;
+  }
+  const num = v => (v === null || v === undefined || v === '') ? null : Number(v);
+  function normalize(r){
+    r.id = num(r.id); r.vater_id = num(r.vater_id); r.mutter_id = num(r.mutter_id);
+    r.ehepartner_ids = (r.ehepartner_ids || []).map(num).filter(v => v !== null && !isNaN(v));
+    return r;
+  }
+  async function loadPersons(){
+    if (DB_READY){
+      try{
+        const res = await fetch(REST + '?select=*', { headers: headers() });
+        if (res.ok){
+          const rows = await res.json();
+          if (rows.length) return { rows: rows.map(normalize), source: 'Datenbank (aktuell)' };
+        }
+      }catch(e){ console.warn(e); }
+    }
+    return { rows: (window.ALL_PERSONS || []).map(p => normalize(Object.assign({}, p))), source: 'Offline-Kopie (nicht aktuell)' };
+  }
+
+  // ---------------------------------------------------------------
+  // Hilfsfunktionen
+  // ---------------------------------------------------------------
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  let P = {};                       // id -> Person
+  const fullName = p => p ? [p.vorname, p.zweitname, p.nachname].filter(Boolean).join(' ') || p.name || '?' : '?';
+  const shortName = p => p ? ([p.vorname, p.zweitname].filter(Boolean).join(' ') || p.name || '?') : '?';
+  function yearOf(s){ const m = String(s || '').match(/(\d{4})/); return m ? Number(m[1]) : null; }
+  const birthYear = p => p.jg || yearOf(p.geburt);
+  const deathYear = p => p.todesjahr || yearOf(p.sterbe);
+  const isDead = p => !!(p.sterbe && String(p.sterbe).trim() !== '');
+  function sortKey(p){
+    const g = String(p.geburt || '');
+    const m = g.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+    if (m) return Number(m[3]) * 10000 + Number(m[2]) * 100 + Number(m[1]);
+    const y = birthYear(p); return y ? y * 10000 : 99999999;
+  }
+  const birthText = p => p.geburt || (p.jg ? String(p.jg) : '?');
+  const deathText = p => isDead(p) ? String(p.sterbe) : '';
+  const birthMissing = p => !p.geburt && !p.jg || String(p.geburt).trim() === '?';
+  const deathMissing = p => String(p.sterbe || '').trim() === '?';
+  function partnersOf(p){
+    const ids = (p.ehepartner_ids || []).filter(id => P[id]);
+    Object.values(P).forEach(o => { if ((o.ehepartner_ids || []).includes(p.id) && !ids.includes(o.id)) ids.push(o.id); });
+    return ids.map(id => P[id]);
+  }
+  function partnerText(p){
+    const ps = partnersOf(p);
+    if (ps.length) return ps.map(fullName).join(' / ');
+    return p.ehepartner_raw || '';
+  }
+  function life(p){
+    const b = birthText(p), d = deathText(p);
+    return '* ' + b + (d ? ' · † ' + d : '');
+  }
+
+  // ---------------------------------------------------------------
+  // Familien bilden: je Elternpaar (vater_id + mutter_id) eine Familie
+  // ---------------------------------------------------------------
+  let FAMS = [], famByKey = {}, famOfParent = {}, famOfChild = {};
+  function buildFamilies(){
+    FAMS = []; famByKey = {}; famOfParent = {}; famOfChild = {};
+    Object.values(P).forEach(c => {
+      if (c.vater_id == null && c.mutter_id == null) return;
+      // Schutz gegen Datenfehler: niemand ist sein eigener Elternteil
+      const v = (P[c.vater_id] && c.vater_id !== c.id) ? c.vater_id : null, m = (P[c.mutter_id] && c.mutter_id !== c.id) ? c.mutter_id : null;
+      if (v == null && m == null) return;
+      const key = v + '|' + m;
+      if (!famByKey[key]){ famByKey[key] = { key, v, m, kids: [] }; FAMS.push(famByKey[key]); }
+      famByKey[key].kids.push(c);
+      famOfChild[c.id] = famByKey[key];
+    });
+    FAMS.forEach(f => {
+      f.kids.sort((a, b) => sortKey(a) - sortKey(b));
+      [f.v, f.m].forEach(id => { if (id != null){ (famOfParent[id] = famOfParent[id] || []).push(f); } });
+    });
+  }
+
+  // Zweige: Familien, deren Eltern selbst keine Eltern im Baum haben
+  const hasParents = id => !!famOfChild[id];
+  let BRANCHES = [];
+  const COLORS = ['#13294B','#2F6B4F','#A4522B','#2C7C8C','#6E3F78','#B08A2E','#7A5C2E','#3D5A99'];
+  function buildBranches(){
+    const roots = FAMS.filter(f => !hasParents(f.v) && !hasParents(f.m));
+    const seen = new Set();
+    BRANCHES = [];
+    roots.forEach(root => {
+      if (seen.has(root.key)) return;
+      const list = [];
+      (function walk(f){
+        if (seen.has(f.key)) return;
+        seen.add(f.key); list.push(f);
+        // Kinder-Familien: über den Vater, oder über die Mutter, wenn der Vater
+        // selbst keine Eltern im Baum hat (eingeheiratet). So landet jede Familie im
+        // Zweig des Vaters, Familien von Töchtern bleiben bei ihrer Herkunftsfamilie.
+        f.kids.forEach(k => (famOfParent[k.id] || []).forEach(kf => {
+          if (kf.v === k.id || (kf.m === k.id && (kf.v == null || !hasParents(kf.v)))) walk(kf);
+        }));
+      })(root);
+      const lead = P[root.v] || P[root.m];
+      BRANCHES.push({ name: (lead && lead.nachname) || fullName(lead), root, fams: list, size: list.reduce((n, f) => n + f.kids.length, 0) });
+    });
+    // Familien, die nirgends dranhängen (sollte selten sein)
+    const rest = FAMS.filter(f => !seen.has(f.key));
+    if (rest.length) BRANCHES.push({ name: 'Weitere Familien', fams: rest, size: rest.length });
+    BRANCHES.sort((a, b) => b.size - a.size);
+    BRANCHES.forEach((b, i) => { b.color = COLORS[i % COLORS.length]; b.idx = i; b.fams.forEach(f => f.branch = b); });
+  }
+
+  // ---------------------------------------------------------------
+  // Seiten einteilen: 4 Felder pro Seite (2 Spalten x 2 Reihen).
+  // Grosse Familien belegen eine ganze Spalte.
+  // ---------------------------------------------------------------
+  function capacity(){
+    const fs = parseFloat(document.getElementById('fs').value);
+    // Zeilen, die in eine halbe Seite bzw. eine ganze Spalte passen
+    const half = Math.max(4, Math.floor(10.5 * 13.3 / fs));
+    return { half, full: half * 2 + 6 };
+  }
+  function paginate(fams){
+    const cap = capacity();
+    const pages = []; let cur = null;
+    function newPage(branch){ cur = { type: 'fam', branch, branches: [], cells: [], used: 0 }; pages.push(cur); }
+    fams.forEach(f => {
+      const tall = f.kids.length > cap.half;
+      if (!cur) newPage(f.branch);
+      if (tall){
+        // braucht eine ganze Spalte: Spalte 1 (Felder 0,1) oder Spalte 2 (Felder 2,3)
+        if (cur.used === 0){ cur.cells.push({ f, tall: true }); cur.used = 2; }
+        else if (cur.used <= 2){ if (cur.used === 1) cur.cells.push(null); cur.cells.push({ f, tall: true }); cur.used = 4; }
+        else { newPage(f.branch); cur.cells.push({ f, tall: true }); cur.used = 2; }
+        f.overflow = f.kids.length > cap.full;
+      } else {
+        if (cur.used >= 4) newPage(f.branch);
+        cur.cells.push({ f, tall: false }); cur.used += 1;
+      }
+      if (!cur.branches.includes(f.branch)) cur.branches.push(f.branch);
+    });
+    return pages;
+  }
+
+  // ---------------------------------------------------------------
+  // Darstellung
+  // ---------------------------------------------------------------
+  let PAGE_OF_FAM = {}, PAGE_OF_PERSON = {};
+  function famTitle(f){
+    const v = P[f.v], m = P[f.m];
+    const names = [v, m].filter(Boolean).map(shortName).join(' und ');
+    const sur = [v && v.nachname, m && m.nachname].filter(Boolean);
+    const uniq = sur.filter((s, i) => sur.indexOf(s) === i);
+    return names + ' ' + uniq.join('-');
+  }
+  function parentBox(id, f){
+    const p = P[id];
+    if (!p) return `<div class="pbox"><div class="n">? (unbekannt)</div><div class="s">Bitte ergänzen</div><div class="ok"><div class="cb"></div>stimmt<span class="line"></span></div></div>`;
+    const pf = famOfChild[p.id];
+    const ref = pf ? 'Eltern: S. ' + PAGE_OF_FAM[pf.key] : 'Eltern ?';
+    const extra = [p.geburtsort ? 'aus ' + p.geburtsort : '', p.bem || ''].filter(Boolean).join(' · ');
+    return `<div class="pbox">
+      <div class="n">${esc(fullName(p))}</div>
+      <div class="s">${esc(life(p))} · ${esc(ref)}</div>
+      ${extra ? `<div class="s" title="${esc(extra)}">${esc(extra)}</div>` : ''}
+      <div class="ok"><div class="cb"></div>stimmt<span class="line"></span></div>
+    </div>`;
+  }
+  function famHtml(cell, pageNo){
+    const f = cell.f;
+    const parentsDeath = [P[f.v], P[f.m]].filter(Boolean).map(deathText).filter(Boolean);
+    const rows = f.kids.map(k => {
+      const own = famOfParent[k.id] || [];
+      const refs = own.map(of => PAGE_OF_FAM[of.key]).filter(Boolean);
+      const refTxt = refs.length ? '→ S. ' + refs.filter((r, i) => refs.indexOf(r) === i).join(', ') : '';
+      const dt = deathText(k);
+      const sameAsParent = dt && dt.length >= 8 && parentsDeath.includes(dt);
+      const bem = [refTxt, sameAsParent ? 'Todestag = Elternteil?' : '', k.bem || ''].filter(Boolean).join(' · ');
+      return `<tr>
+        <td class="k">${esc(shortName(k))}${k.nachname && P[f.v] && k.nachname !== P[f.v].nachname ? ' ' + esc(k.nachname) : ''}</td>
+        <td class="${birthMissing(k) ? 'flag' : ''}">${esc(birthText(k))}</td>
+        <td class="${deathMissing(k) || sameAsParent ? 'flag' : ''}">${esc(dt)}</td>
+        <td title="${esc(partnerText(k))}">${esc(partnerText(k))}</td>
+        <td class="bem" title="${esc(bem)}">${esc(bem)}</td>
+        <td><div class="cb"></div></td>
+        <td></td>
+      </tr>`;
+    }).join('');
+    const gen = generation(f.v != null ? f.v : f.m);
+    return `<div class="fam${cell.tall ? ' tall' : ''}" style="border-left:5px solid ${f.branch.color}">
+      <div class="ft"><b>${esc(famTitle(f))}</b><span>${gen}. Generation · ${f.kids.length} Kind${f.kids.length === 1 ? '' : 'er'}</span></div>
+      <div class="parents">${parentBox(f.v, f)}${parentBox(f.m, f)}</div>
+      <table>
+        <colgroup><col style="width:21%"><col style="width:12%"><col style="width:11%"><col style="width:21%"><col style="width:16%"><col style="width:4%"><col style="width:15%"></colgroup>
+        <thead><tr><th>Kind</th><th>Geboren</th><th>Gestorben</th><th>Partner/in</th><th>Bemerkung</th><th>✓</th><th>Korrektur</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      ${f.overflow ? '<div class="bem" style="color:#b3261e">Sehr viele Kinder – bitte Liste am Bildschirm prüfen.</div>' : ''}
+      <div class="more">Fehlt jemand?<span class="line"></span></div>
+    </div>`;
+  }
+  const genCache = {};
+  function generation(id){
+    if (id == null) return 1;
+    if (genCache[id]) return genCache[id];
+    const p = P[id]; const pf = famOfChild[id];
+    genCache[id] = 1; // gegen Schleifen
+    const g = pf ? 1 + Math.max(generation(pf.v), generation(pf.m)) : 1;
+    genCache[id] = g; return g;
+  }
+
+  function anchorLine(id){
+    // väterliche Linie (ersatzweise mütterliche) nach oben
+    const line = []; let cur = P[id]; const guard = new Set();
+    while (cur && !guard.has(cur.id)){
+      guard.add(cur.id); line.unshift(cur);
+      cur = P[cur.vater_id] || P[cur.mutter_id];
+    }
+    return line;
+  }
+  function coverHtml(branchSel){
+    const anchorId = Number(document.getElementById('anchor').value);
+    const line = anchorLine(anchorId).slice(-9);
+    const rungs = line.map((p, i) => {
+      const sp = partnersOf(p).filter(s => !(line[i + 1] && (line[i + 1].vater_id === s.id || line[i + 1].mutter_id === s.id)) ? true : true);
+      const childNext = line[i + 1];
+      const other = childNext ? P[childNext.vater_id === p.id ? childNext.mutter_id : childNext.vater_id] : null;
+      const partner = other ? fullName(other) : (sp[0] ? fullName(sp[0]) : (p.ehepartner_raw || ''));
+      const by = birthYear(p), dy = deathYear(p);
+      const yrs = (by ? by : '?') + (isDead(p) ? ' – ' + (dy || '?') : '');
+      const pf = famOfParent[p.id] && famOfParent[p.id][0];
+      return `<div class="rung${i === line.length - 1 ? ' me' : ''}">
+        <div class="g">${generation(p.id)}. Generation</div>
+        <div class="n">${esc(shortName(p))}</div>
+        <div>${esc(yrs)}</div>
+        <div>${partner ? '⚭ ' + esc(partner) : ''}</div>
+        <div class="g" style="margin-top:auto">${pf && PAGE_OF_FAM[pf.key] ? 'S. ' + PAGE_OF_FAM[pf.key] : ''}</div>
+      </div>`;
+    }).join('');
+    const branches = BRANCHES.filter(b => branchSel === 'all' || String(b.idx) === branchSel)
+      .map(b => `<div><span class="dot" style="background:${b.color}"></span>${esc(b.name)} · S. ${b.firstPage || '–'}</div>`).join('');
+    const total = Object.keys(P).length;
+    const today = new Date().toLocaleDateString('de-CH', { month: 'long', year: 'numeric' });
+    return `<div class="page cover">
+      <div class="phead"><div><div style="font-size:.95em;letter-spacing:.14em;text-transform:uppercase;color:#5a5a5a">Prüfbögen zur Kontrolle</div>
+        <h1>Stammbaum Nyffenegger · Meier · Künzi · Wetli</h1></div>
+        <div class="legend" style="text-align:right">Stand: ${esc(today)}<br>${BRANCHES.length} Zweige · ${total} Personen</div></div>
+      <h2 style="margin:4px 0 0;font-family:'Alegreya',Georgia,serif;font-size:1.45em;color:var(--navy)">Stammlinie von ${esc(fullName(P[anchorId]))}</h2>
+      <div class="ladder" style="grid-template-columns:repeat(${line.length},1fr)">${rungs}</div>
+      <div class="twocol" style="margin-top:8px">
+        <div><h2>So prüfen Sie Ihre Familie</h2>
+          <div class="step"><i>1</i><span>Suchen Sie Ihren Namen im Register am Schluss.</span></div>
+          <div class="step"><i>2</i><span>Kreuzen Sie bei jeder Person an, ob alles stimmt, oder schreiben Sie die Korrektur daneben.</span></div>
+          <div class="step"><i>3</i><span>Ergänzen Sie fehlende Personen, Daten, Orte und Berufe. Fotos und Dokumente sind willkommen.</span></div>
+        </div>
+        <div><h2>Familienzweige</h2><div class="branches">${branches}</div>
+          <div style="margin-top:8px;color:var(--soft)">Orange hinterlegt = fehlt oder bitte prüfen · ? = unbekannt · ✓ = stimmt</div>
+        </div>
+      </div>
+      <div class="pfoot"><div>Bitte zurück an Daniel Nyffenegger · Korrekturen auch direkt auf dnyffi.github.io/stammbaum</div><div>Seite 1</div></div>
+    </div>`;
+  }
+
+  function registerPages(startPage, onlyIds){
+    const people = Object.values(P).filter(p => PAGE_OF_PERSON[p.id] && (!onlyIds || onlyIds.has(p.id)));
+    people.sort((a, b) => (a.nachname || '~').localeCompare(b.nachname || '~', 'de') || (a.vorname || '').localeCompare(b.vorname || '', 'de') || sortKey(a) - sortKey(b));
+    const fs = parseFloat(document.getElementById('fs').value);
+    const perCol = Math.floor(33 * 13.3 / fs), cols = 5, perPage = perCol * cols;
+    // Eintraege mit Buchstaben-Zwischentiteln
+    const items = []; let last = '';
+    people.forEach(p => {
+      const L = (p.nachname || '?').charAt(0).toUpperCase();
+      if (L !== last){ items.push({ letter: L }); last = L; }
+      const by = birthYear(p), dy = deathYear(p);
+      const yrs = by ? (isDead(p) ? by + '–' + (dy || '?') : '* ' + by) : (isDead(p) ? '†' : '?');
+      items.push({ name: (p.nachname || '?') + ', ' + ([p.vorname, p.zweitname].filter(Boolean).join(' ') || '?'), info: yrs + ' · ' + PAGE_OF_PERSON[p.id] });
+    });
+    const pages = [];
+    for (let i = 0; i < items.length; i += perPage){
+      const chunk = items.slice(i, i + perPage);
+      let colsHtml = '';
+      for (let c = 0; c < cols; c++){
+        const part = chunk.slice(c * perCol, (c + 1) * perCol);
+        colsHtml += '<div class="col">' + part.map(it => it.letter
+          ? `<div class="letter">${esc(it.letter)}</div>`
+          : `<div class="row"><span title="${esc(it.name)}">${esc(it.name)}</span><span>${esc(it.info)}</span></div>`).join('') + '</div>';
+      }
+      const no = startPage + pages.length;
+      pages.push(`<div class="page"><div class="phead"><h1>Namensregister</h1><div class="legend">Name · Lebensjahre · Seite</div></div>
+        <div class="reg">${colsHtml}</div>
+        <div class="pfoot"><div>${people.length} Personen</div><div>Stammbaum Nyffenegger · Seite ${no}</div></div></div>`);
+    }
+    return pages;
+  }
+
+  function render(){
+    const sel = document.getElementById('branch').value;
+    document.documentElement.style.setProperty('--fs', document.getElementById('fs').value + 'px');
+    const fams = [];
+    BRANCHES.filter(b => sel === 'all' || String(b.idx) === sel).forEach(b => fams.push(...b.fams));
+    const pages = paginate(fams);
+    PAGE_OF_FAM = {}; PAGE_OF_PERSON = {};
+    BRANCHES.forEach(b => b.firstPage = null);
+    // Seitennummern: 1 = Deckblatt, Familien ab 2
+    pages.forEach((pg, i) => {
+      const no = i + 2;
+      pg.branches.forEach(b => { if (!b.firstPage) b.firstPage = no; });
+      pg.cells.forEach(c => { if (!c) return; PAGE_OF_FAM[c.f.key] = no; });
+    });
+    // Personen -> Seite (als Elternteil bevorzugt, sonst als Kind, sonst als Partner eines Kindes)
+    const inSel = new Set();
+    pages.forEach((pg, i) => pg.cells.forEach(c => {
+      if (!c) return; const no = i + 2, f = c.f;
+      [f.v, f.m].forEach(id => { if (id != null){ inSel.add(id); if (!PAGE_OF_PERSON[id]) PAGE_OF_PERSON[id] = no; } });
+    }));
+    pages.forEach((pg, i) => pg.cells.forEach(c => {
+      if (!c) return; const no = i + 2;
+      c.f.kids.forEach(k => {
+        inSel.add(k.id);
+        if (!PAGE_OF_PERSON[k.id] || !(famOfParent[k.id] || []).some(of => PAGE_OF_FAM[of.key])) PAGE_OF_PERSON[k.id] = PAGE_OF_PERSON[k.id] || no;
+        partnersOf(k).forEach(sp => { inSel.add(sp.id); if (!PAGE_OF_PERSON[sp.id]) PAGE_OF_PERSON[sp.id] = no; });
+      });
+    }));
+
+    let html = coverHtml(sel);
+    pages.forEach((pg, i) => {
+      const no = i + 2;
+      const cells = pg.cells.map(c => c ? famHtml(c, no) : '<div></div>').join('');
+      const bnames = pg.branches.map(b => b.name).join(' · ');
+      html += `<div class="page"><div class="stripe" style="background:${pg.branches[0].color}"></div>
+        <div class="phead"><h1>${pg.branches.length > 1 ? 'Zweige' : 'Zweig'} ${esc(bnames)}</h1><div class="legend">Orange = fehlt oder bitte prüfen · ? = unbekannt · ✓ = stimmt</div></div>
+        <div class="grid">${cells}</div>
+        <div class="pfoot"><div>Geprüft von: ____________________ · Fotos/Dokumente vorhanden? ☐ ja ☐ nein</div><div>Stammbaum Nyffenegger · Seite ${no}</div></div></div>`;
+    });
+    const reg = registerPages(pages.length + 2, sel === 'all' ? null : inSel);
+    html += reg.join('');
+    document.getElementById('pages').innerHTML = html;
+    document.getElementById('info').textContent = (pages.length + reg.length + 1) + ' Seiten · ' + fams.length + ' Familien';
+  }
+
+  // ---------------------------------------------------------------
+  // Start
+  // ---------------------------------------------------------------
+  (async function(){
+    const { rows, source } = await loadPersons();
+    P = {}; rows.forEach(r => { if (r.id != null) P[r.id] = r; });
+    buildFamilies(); buildBranches();
+
+    const bsel = document.getElementById('branch');
+    BRANCHES.forEach(b => { const o = document.createElement('option'); o.value = b.idx; o.textContent = b.name + ' (' + b.fams.length + ' Familien)'; bsel.appendChild(o); });
+
+    // Stammlinie: Personen mit der längsten Ahnenlinie zur Auswahl, Standard = längste Linie
+    const asel = document.getElementById('anchor');
+    const cand = Object.values(P).filter(p => !(famOfParent[p.id] || []).length || true)
+      .map(p => ({ p, d: anchorLine(p.id).length })).filter(x => x.d >= 3)
+      .sort((a, b) => b.d - a.d || sortKey(a.p) - sortKey(b.p));
+    const params = new URLSearchParams(location.search);
+    const wanted = Number(params.get('person'));
+    cand.forEach(x => { const o = document.createElement('option'); o.value = x.p.id; o.textContent = fullName(x.p) + (birthYear(x.p) ? ' (' + birthYear(x.p) + ')' : ''); asel.appendChild(o); });
+    const daniel = Object.values(P).find(p => p.vorname === 'Daniel' && p.nachname === 'Nyffenegger' && birthYear(p) === 1988);
+    asel.value = String(wanted && P[wanted] ? wanted : (daniel ? daniel.id : (cand[0] ? cand[0].p.id : '')));
+
+    ['branch', 'fs', 'anchor'].forEach(id => document.getElementById(id).addEventListener('change', render));
+    document.getElementById('print').addEventListener('click', () => window.print());
+
+    document.getElementById('status').style.display = 'none';
+    render();
+    document.getElementById('info').textContent += ' · Daten: ' + source;
+  })().catch(e => { document.getElementById('status').textContent = 'Fehler beim Laden: ' + e; });
+})();
+</script>
+</body>
+</html>
