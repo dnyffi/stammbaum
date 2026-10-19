@@ -152,7 +152,7 @@
       const res = await fetch(API, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ pin: pin, action: 'batch', items: items })
+        body: JSON.stringify({ pin: pin, action: 'batch', items: items, wer: editorName() || undefined })
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || data.error) return { ok: false, error: data.error || ('HTTP ' + res.status) };

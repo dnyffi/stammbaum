@@ -86,16 +86,14 @@
 <script>
 (function(){
   'use strict';
-  const CFG = window.SUPABASE_CONFIG || {};
-  const DB_READY = !!(CFG.url && CFG.anonKey && CFG.url.indexOf('DEINE-PROJECT-URL') === -1);
-  const REST = DB_READY ? CFG.url.replace(/\/$/, '') + '/rest/v1/personen' : null;
+  const CFG = window.APPSCRIPT_CONFIG || {};
+  const DB_READY = !!(CFG.url && CFG.url.indexOf('DEINE-') === -1);
+  const API = DB_READY ? CFG.url.replace(/\/$/, '') : null;
   async function loadPersons(){
     if (DB_READY){
       try{
-        const h = { apikey: CFG.anonKey };
-        if (!CFG.anonKey.startsWith('sb_')) h.Authorization = 'Bearer ' + CFG.anonKey;
-        const res = await fetch(REST + '?select=*', { headers: h });
-        if (res.ok){ const rows = await res.json(); if (rows.length) return rows; }
+        const res = await fetch(API + '?resource=personen&_=' + Date.now(), { cache: 'no-store' });
+        if (res.ok){ const rows = await res.json(); if (Array.isArray(rows) && rows.length) return rows; }
       }catch(e){ console.warn(e); }
     }
     return (window.ALL_PERSONS || []).map(p => Object.assign({}, p));

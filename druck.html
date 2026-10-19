@@ -133,28 +133,54 @@
   // ---------------------------------------------------------------
   // Daten laden (gleich wie die Hauptseite): zuerst Datenbank, sonst eingebettete Daten
   // ---------------------------------------------------------------
-  const CFG = window.SUPABASE_CONFIG || {};
-  const DB_READY = !!(CFG.url && CFG.anonKey && CFG.url.indexOf('DEINE-PROJECT-URL') === -1);
-  const REST = DB_READY ? CFG.url.replace(/\/$/, '') + '/rest/v1/personen' : null;
+  const CFG = window.APPSCRIPT_CONFIG || {};
+  const DB_READY = !!(CFG.url && CFG.url.indexOf('DEINE-') === -1);
+  const API = DB_READY ? CFG.url.replace(/\/$/, '') : null;
 
-  function headers(){
-    const h = { apikey: CFG.anonKey };
-    if (!CFG.anonKey || !CFG.anonKey.startsWith('sb_')) h['Authorization'] = 'Bearer ' + CFG.anonKey;
-    return h;
-  }
   const num = v => (v === null || v === undefined || v === '') ? null : Number(v);
   function normalize(r){
     r.id = num(r.id); r.vater_id = num(r.vater_id); r.mutter_id = num(r.mutter_id);
-    r.ehepartner_ids = (r.ehepartner_ids || []).map(num).filter(v => v !== null && !isNaN(v));
     return r;
+  }
+  // Beziehungen-Tabelle (separat von Personen) in ehepartner_ids/ehepartner_raw/
+  // heirat_datum/heirat_ort auf dem Personen-Objekt ablegen - wie auf der
+  // Hauptseite, damit der Baum/die Partner-Anzeige hier gleich funktioniert.
+  function applyRelationships(byId, rows){
+    const byPerson = {};
+    (rows || []).forEach(row => {
+      const pid = row.person_id === '' || row.person_id == null ? null : Number(row.person_id);
+      const oid = row.partner_id === '' || row.partner_id == null ? null : Number(row.partner_id);
+      [pid, oid].forEach(id => { if (id != null) (byPerson[id] = byPerson[id] || []).push(Object.assign({}, row, { person_id: pid, partner_id: oid })); });
+    });
+    Object.keys(byPerson).forEach(pid => {
+      const p = byId[Number(pid)];
+      if (!p) return;
+      const list = byPerson[pid].slice().sort((a, b) => {
+        const aOngoing = !a.bis_datum, bOngoing = !b.bis_datum;
+        if (aOngoing !== bOngoing) return aOngoing ? -1 : 1;
+        return (b.von_datum || '').localeCompare(a.von_datum || '') || (b.id - a.id);
+      });
+      const rel = list[0];
+      if (!rel) return;
+      const otherId = rel.person_id === Number(pid) ? rel.partner_id : rel.person_id;
+      p.ehepartner_ids = otherId != null ? [otherId] : [];
+      p.ehepartner_raw = rel.partner_raw || (otherId != null && byId[otherId] ? fullName(byId[otherId]) : null);
+      p.heirat_datum = rel.von_datum || null;
+      p.heirat_ort = rel.von_ort || null;
+    });
   }
   async function loadPersons(){
     if (DB_READY){
       try{
-        const res = await fetch(REST + '?select=*', { headers: headers() });
+        const res = await fetch(API + '?resource=all&_=' + Date.now(), { cache: 'no-store' });
         if (res.ok){
-          const rows = await res.json();
-          if (rows.length) return { rows: rows.map(normalize), source: 'Datenbank (aktuell)' };
+          const data = await res.json();
+          if (data.personen && data.personen.length){
+            const rows = data.personen.map(normalize);
+            const byId = {}; rows.forEach(r => byId[r.id] = r);
+            applyRelationships(byId, data.beziehungen);
+            return { rows: rows, source: 'Datenbank (aktuell)' };
+          }
         }
       }catch(e){ console.warn(e); }
     }
