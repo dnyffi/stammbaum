@@ -78,7 +78,10 @@
   async function loadPersons(){
     if (DB_READY){
       try {
-        const res = await fetch(API + '?resource=all');
+        // "_" als Cache-Bremse: ohne das koennte der Browser eine aeltere
+        // Antwort fuer dieselbe URL aus dem HTTP-Cache wiederverwenden,
+        // statt wirklich neu beim Apps-Script-Backend nachzufragen.
+        const res = await fetch(API + '?resource=all&_=' + Date.now(), { cache: 'no-store' });
         if (res.ok){
           const data = await res.json();
           if (data.error){
