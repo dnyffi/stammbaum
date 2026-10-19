@@ -5,7 +5,7 @@
 // (drei separate Dateien, ueber ihre feste Datei-ID angesprochen)
 // =====================================================================
 
-var PIN = 'Nyffi'; // muss mit dem PIN in config.js (app.js) uebereinstimmen
+
 
 // Spalten, die immer als Klartext behandelt werden muessen (nie als
 // Datum interpretieren) - sonst wandelt Google Sheets z.B. "09.01.2022"
