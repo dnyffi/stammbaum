@@ -2,37 +2,21 @@
   const SEALS = ['var(--seal-red)','var(--seal-green)','var(--seal-blue)','var(--seal-orange)'];
   const main = document.getElementById('main');
 
-  const CFG = window.SUPABASE_CONFIG || {};
-  const DB_READY = !!(CFG.url && CFG.anonKey
-    && CFG.url.indexOf('DEINE-PROJECT-URL') === -1
-    && CFG.anonKey.indexOf('DEIN-ANON-KEY') === -1);
-  const REST = DB_READY ? CFG.url.replace(/\/$/, '') + '/rest/v1/personen' : null;
+  const CFG = window.APPSCRIPT_CONFIG || {};
+  const DB_READY = !!(CFG.url && CFG.url.indexOf('DEINE-') === -1);
+  const API = DB_READY ? CFG.url.replace(/\/$/, '') : null;
 
   const PERSONS = { byId: {} };
+  const RELATIONS = { byId: {} }; // Beziehungen-Tabelle, roh (Rohzeilen nach ID)
 
-  function dbHeaders(withPin){
-    const h = {
-      'apikey': CFG.anonKey,
-      'Content-Type': 'application/json',
-    };
-    // Neues Supabase-Schluesselformat (sb_publishable_..., sb_secret_...) ist kein JWT
-    // und gehoert nur in den apikey-Header. Das alte Format (eyJ...) braucht zusaetzlich
-    // den Authorization-Header - beide Faelle werden hier abgedeckt.
-    if (!CFG.anonKey || !CFG.anonKey.startsWith('sb_')){
-      h['Authorization'] = 'Bearer ' + CFG.anonKey;
-    }
-    if (withPin) h['x-family-pin'] = CFG.pin || '';
-    if (withPin){ const n = editorName(); if (n) h['x-editor-name'] = encodeURIComponent(n); }
-    return h;
-  }
   // Wer bearbeitet? (für den Änderungsverlauf, im Browser gemerkt)
   function editorName(){ try { return localStorage.getItem('stammbaum.editor') || ''; } catch(e){ return ''; } }
   function setEditorName(n){ try { localStorage.setItem('stammbaum.editor', n); } catch(e){} }
-  // Gibt es die Heiratsfelder schon in der Datenbank?
-  let HAS_HEIRAT = false;
+  // Heiratsfelder gibt es immer (werden aus der Beziehungen-Tabelle abgeleitet)
+  const HAS_HEIRAT = true;
 
   // ---------------------------------------------------------------
-  // Laden: zuerst aus der Datenbank (falls config.js ausgefuellt ist),
+  // Laden: zuerst aus der Datenbank (Apps-Script-Backend auf Google Sheets),
   // sonst aus den eingebetteten Daten (forest_embed.js) als Offline-Fallback.
   // ---------------------------------------------------------------
   // IDs immer als Zahlen fuehren (die Datenbank kann sie je nach Einstellung als Text liefern)
@@ -41,27 +25,75 @@
     r.id = num(r.id);
     r.vater_id = num(r.vater_id);
     r.mutter_id = num(r.mutter_id);
-    r.ehepartner_ids = (r.ehepartner_ids || []).map(num).filter(v => v !== null && !isNaN(v));
     return r;
+  }
+
+  // Aus der separaten Beziehungen-Tabelle fuer jede Person die "aktuelle"
+  // Beziehung ableiten (laufende Beziehung ohne Enddatum zuerst, sonst die
+  // zuletzt begonnene) und als ehepartner_ids/ehepartner_raw/beziehungsstatus/
+  // heirat_datum/heirat_ort aufs Personen-Objekt legen - so funktioniert die
+  // bestehende Anzeige/Bearbeitung (Baum, Datenprüfung, Bearbeiten-Dialog)
+  // unveraendert weiter, obwohl die Daten jetzt woanders liegen.
+  function applyRelationships(rows){
+    RELATIONS.byId = {};
+    const byPerson = {};
+    (rows || []).forEach(row => {
+      row.id = Number(row.id);
+      row.person_id = (row.person_id === '' || row.person_id == null) ? null : Number(row.person_id);
+      row.partner_id = (row.partner_id === '' || row.partner_id == null) ? null : Number(row.partner_id);
+      RELATIONS.byId[row.id] = row;
+      [row.person_id, row.partner_id].forEach(pid => {
+        if (pid == null) return;
+        (byPerson[pid] = byPerson[pid] || []).push(row);
+      });
+    });
+    Object.keys(byPerson).forEach(pid => {
+      const p = PERSONS.byId[Number(pid)];
+      if (!p) return;
+      const list = byPerson[pid].slice().sort((a, b) => {
+        const aOngoing = !a.bis_datum, bOngoing = !b.bis_datum;
+        if (aOngoing !== bOngoing) return aOngoing ? -1 : 1;
+        return (b.von_datum || '').localeCompare(a.von_datum || '') || (b.id - a.id);
+      });
+      const rel = list[0];
+      if (!rel) return;
+      const otherId = rel.person_id === Number(pid) ? rel.partner_id : rel.person_id;
+      p._relId = rel.id;
+      p.ehepartner_ids = otherId != null ? [otherId] : [];
+      p.ehepartner_raw = rel.partner_raw || null;
+      p.beziehungsstatus = rel.status || null;
+      p.heirat_datum = rel.von_datum || null;
+      p.heirat_ort = rel.von_ort || null;
+      p._relBisDatum = rel.bis_datum || null;
+      p._relBisGrund = rel.bis_grund || null;
+    });
+    // ehepartner_raw ohne gefundene Person: Namen trotzdem auffuellen, falls leer
+    Object.values(PERSONS.byId).forEach(p => {
+      if (p.ehepartner_ids && p.ehepartner_ids.length && !p.ehepartner_raw && PERSONS.byId[p.ehepartner_ids[0]]){
+        p.ehepartner_raw = fullName(PERSONS.byId[p.ehepartner_ids[0]]);
+      }
+    });
   }
 
   async function loadPersons(){
     if (DB_READY){
       try {
-        const res = await fetch(REST + '?select=*', { headers: dbHeaders(false) });
+        const res = await fetch(API + '?resource=all');
         if (res.ok){
-          const rows = await res.json();
-          if (rows.length){
-            HAS_HEIRAT = rows.some(r => Object.prototype.hasOwnProperty.call(r, 'heirat_datum'));
-            rows.forEach(r => { normalizeIds(r); PERSONS.byId[r.id] = r; });
+          const data = await res.json();
+          if (data.error){
+            console.warn('Apps-Script-Fehler:', data.error);
+          } else if (data.personen && data.personen.length){
+            data.personen.forEach(r => { normalizeIds(r); PERSONS.byId[r.id] = r; });
+            applyRelationships(data.beziehungen);
             markSource('db');
             return;
           }
         } else {
-          console.warn('Supabase-Antwort nicht ok:', res.status, await res.text());
+          console.warn('Datenbank-Antwort nicht ok:', res.status, await res.text());
         }
       } catch(e){
-        console.warn('Supabase nicht erreichbar, nutze lokale Daten:', e);
+        console.warn('Datenbank nicht erreichbar, nutze lokale Daten:', e);
       }
     }
     (window.ALL_PERSONS || []).forEach(p => { const c = normalizeIds(Object.assign({}, p)); PERSONS.byId[c.id] = c; });
@@ -105,92 +137,33 @@
     } catch(e){}
   }
 
-  // Speichern: in die Datenbank (mit PIN) wenn verbunden, sonst nur lokal.
-  async function persistPerson(person, pin){
-    if (!DB_READY){
-      persistLocal(person);
-      return { ok: true, mode: 'local' };
-    }
-    const body = {
-      vorname: person.vorname, zweitname: person.zweitname, nachname: person.nachname,
-      maedchenname: person.maedchenname, geschlecht: person.geschlecht,
-      geburt: person.geburt, jg: person.jg, geburtsort: person.geburtsort,
-      heimatort: person.heimatort, sterbe: person.sterbe, todesjahr: person.todesjahr,
-      beziehungsstatus: person.beziehungsstatus, ehepartner_raw: person.ehepartner_raw,
-      ehepartner_ids: person.ehepartner_ids && person.ehepartner_ids.length ? person.ehepartner_ids : null,
-      vater_id: person.vater_id, mutter_id: person.mutter_id, bem: person.bem,
-    };
-    if (HAS_HEIRAT){ body.heirat_datum = person.heirat_datum || null; body.heirat_ort = person.heirat_ort || null; }
-    const headers = dbHeaders(true);
-    headers['x-family-pin'] = pin;
+  // Eine oder mehrere Zeilen (Personen und/oder Beziehungen) in einem
+  // Request ans Apps-Script-Backend schicken. items: [{resource, id, data}]
+  // - id === null/undefined => neue Zeile anlegen (Server vergibt die ID)
+  // - id gesetzt => bestehende Zeile aktualisieren
+  // Als text/plain gesendet, damit der Browser keinen CORS-Preflight
+  // (OPTIONS) ausloest - Apps-Script-Web-Apps koennen den nicht beantworten.
+  async function sendBatch(items, pin){
+    if (!DB_READY) return { ok: false, local: true };
     try {
-      const res = await fetch(REST + '?id=eq.' + person.id, {
-        method: 'PATCH', headers, body: JSON.stringify(body)
+      const res = await fetch(API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ pin: pin, action: 'batch', items: items })
       });
-      if (!res.ok){
-        const txt = await res.text();
-        return { ok: false, mode: 'db', error: txt };
-      }
-      return { ok: true, mode: 'db' };
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.error) return { ok: false, error: data.error || ('HTTP ' + res.status) };
+      return { ok: true, result: data.result || [] };
     } catch(e){
-      return { ok: false, mode: 'db', error: String(e) };
+      return { ok: false, error: String(e) };
     }
   }
 
-  // Neue Person in der Datenbank anlegen (mit PIN)
-  async function insertPerson(person, pin){
-    if (!DB_READY){ persistLocal(person); return { ok: true, mode: 'local' }; }
-    const body = {
-      id: person.id,
-      vorname: person.vorname, zweitname: person.zweitname, nachname: person.nachname,
-      maedchenname: person.maedchenname, geschlecht: person.geschlecht,
-      geburt: person.geburt, jg: person.jg, geburtsort: person.geburtsort,
-      heimatort: person.heimatort, sterbe: person.sterbe, todesjahr: person.todesjahr,
-      beziehungsstatus: person.beziehungsstatus, ehepartner_raw: person.ehepartner_raw,
-      ehepartner_ids: person.ehepartner_ids && person.ehepartner_ids.length ? person.ehepartner_ids : null,
-      vater_id: person.vater_id, mutter_id: person.mutter_id, bem: person.bem,
-    };
-    if (HAS_HEIRAT){ body.heirat_datum = person.heirat_datum || null; body.heirat_ort = person.heirat_ort || null; }
-    const headers = dbHeaders(true);
-    headers['x-family-pin'] = pin;
-    headers['Prefer'] = 'return=representation';
-    async function post(b){
-      const res = await fetch(REST, { method: 'POST', headers, body: JSON.stringify(b) });
-      return { res, txt: res.ok ? '' : await res.text() };
-    }
-    try {
-      let { res, txt } = await post(body);
-      // falls die Datenbank die ID selbst vergibt ("generated always"), ohne ID nochmals versuchen
-      if (!res.ok && /generated always|identity/i.test(txt)){
-        const b2 = Object.assign({}, body); delete b2.id;
-        ({ res, txt } = await post(b2));
-      }
-      if (!res.ok) return { ok: false, mode: 'db', error: txt };
-      const rows = await res.json().catch(() => []);
-      if (rows && rows[0] && rows[0].id != null) person.id = Number(rows[0].id);
-      return { ok: true, mode: 'db' };
-    } catch(e){
-      return { ok: false, mode: 'db', error: String(e) };
-    }
-  }
-
-  // Wenn sich Kinder-Zuordnung aendert, muessen auch die betroffenen
-  // Kinder-Zeilen (vater_id/mutter_id) in der Datenbank aktualisiert werden.
-  async function persistChildLinks(changedChildren, pin){
-    if (!DB_READY) return true;
-    const headers = dbHeaders(true);
-    headers['x-family-pin'] = pin;
-    let allOk = true;
-    for (const child of changedChildren){
-      try {
-        const res = await fetch(REST + '?id=eq.' + child.id, {
-          method: 'PATCH', headers,
-          body: JSON.stringify({ vater_id: child.vater_id, mutter_id: child.mutter_id })
-        });
-        if (!res.ok) allOk = false;
-      } catch(e){ allOk = false; }
-    }
-    return allOk;
+  // Wie sendBatch, faellt aber auf den lokalen Browser-Speicher zurueck,
+  // wenn keine Datenbank konfiguriert ist (Offline-Fallback).
+  async function sendBatchOrLocal(items, pin, person){
+    if (!DB_READY){ persistLocal(person); return { ok: true, local: true, result: [] }; }
+    return sendBatch(items, pin);
   }
 
   function escapeHtml(s){
@@ -1159,8 +1132,14 @@
       else if (st) { p.sterbe = st; const m = st.match(/(\d{4})$/); p.todesjahr = m ? Number(m[1]) : p.todesjahr; }
       else { p.sterbe = null; p.todesjahr = null; }
 
-      p.beziehungsstatus = document.getElementById('f-beziehung').value || null;
+      p.bem = document.getElementById('f-bem').value.trim() || null;
 
+      // Beziehung (Status/Partner/Heirat) lebt jetzt in der separaten
+      // Beziehungen-Tabelle, nicht mehr als Spalten auf der Person selbst -
+      // deshalb hier erst in lokalen Variablen sammeln und mit dem alten
+      // (von applyRelationships() abgeleiteten) Stand vergleichen.
+      const oldPartnerId = (p.ehepartner_ids && p.ehepartner_ids[0] != null) ? p.ehepartner_ids[0] : null;
+      const newStatus = document.getElementById('f-beziehung').value || null;
       const partnerTyped = document.getElementById('f-partner').value.trim();
       const low = partnerTyped.toLowerCase();
       const others = Object.values(PERSONS.byId).filter(pp => pp.id !== id);
@@ -1170,17 +1149,15 @@
         const byName = others.filter(pp => fullName(pp).toLowerCase() === low);
         if (byName.length === 1) match = byName[0];
       }
-      p.ehepartner_raw = match ? fullName(match) : (partnerTyped || null);
-      p.ehepartner_ids = match ? [match.id] : [];
-
-      p.bem = document.getElementById('f-bem').value.trim() || null;
-      let heiratChanged = false;
-      if (HAS_HEIRAT){
-        const hd = document.getElementById('f-heirat').value.trim() || null;
-        const ho = document.getElementById('f-heiratsort').value.trim() || null;
-        heiratChanged = hd !== (p.heirat_datum || null) || ho !== (p.heirat_ort || null);
-        p.heirat_datum = hd; p.heirat_ort = ho;
-      }
+      const newPartnerRaw = match ? fullName(match) : (partnerTyped || null);
+      const newPartnerId = match ? match.id : null;
+      const newHeiratDatum = document.getElementById('f-heirat').value.trim() || null;
+      const newHeiratOrt = document.getElementById('f-heiratsort').value.trim() || null;
+      const relChanged = newStatus !== (p.beziehungsstatus || null)
+        || newPartnerRaw !== (p.ehepartner_raw || null)
+        || newPartnerId !== oldPartnerId
+        || newHeiratDatum !== (p.heirat_datum || null)
+        || newHeiratOrt !== (p.heirat_ort || null);
 
       const slot = p.geschlecht === 'w' ? 'mutter_id' : 'vater_id';
       const changedChildren = [];
@@ -1203,39 +1180,80 @@
       });
       p.kinder_ids = [...currentKids];
 
+      // Felder, die direkt als Spalten in der Personen-Tabelle liegen
+      // (Beziehung/Partner/Heirat gehoeren NICHT mehr dazu).
+      const personFields = pp => ({
+        vorname: pp.vorname, zweitname: pp.zweitname, nachname: pp.nachname,
+        maedchenname: pp.maedchenname, geschlecht: pp.geschlecht,
+        geburt: pp.geburt, jg: pp.jg, geburtsort: pp.geburtsort,
+        heimatort: pp.heimatort, sterbe: pp.sterbe, todesjahr: pp.todesjahr,
+        vater_id: pp.vater_id, mutter_id: pp.mutter_id, bem: pp.bem,
+      });
+      const relFields = () => ({
+        person_id: p.id, partner_id: newPartnerId, partner_raw: newPartnerRaw,
+        status: newStatus, von_datum: newHeiratDatum, von_ort: newHeiratOrt,
+        bis_datum: p._relBisDatum || null, bis_grund: p._relBisGrund || null,
+      });
+
       if (isNew){
-        // zuerst die neue Person anlegen, dann Kinder und Partner verknüpfen
-        p.id = Math.max(0, ...Object.keys(PERSONS.byId).map(Number)) + 1;
-        const res = await insertPerson(p, pin);
-        if (!res.ok){ console.warn(res.error); throw new Error('Neue Person konnte nicht gespeichert werden (PIN falsch oder Anlegen in der Datenbank nicht erlaubt). ' + String(res.error || '').slice(0, 160)); }
+        // Zuerst nur die neue Person anlegen (damit wir ihre echte, vom
+        // Server vergebene ID kennen), danach Kinder-Links und Beziehung
+        // in einem zweiten Request speichern - genau in dieser Reihenfolge,
+        // weil beide die endgueltige ID brauchen.
+        const res1 = await sendBatchOrLocal([{ resource: 'personen', id: null, data: personFields(p) }], pin, p);
+        if (!res1.ok){ console.warn(res1.error); throw new Error('Neue Person konnte nicht gespeichert werden (PIN falsch oder keine Verbindung zur Datenbank). ' + String(res1.error || '').slice(0, 160)); }
+        const newId = (res1.local) ? (Math.max(0, ...Object.keys(PERSONS.byId).map(Number)) + 1) : Number(res1.result[0].id);
+        p.id = newId;
         PERSONS.byId[p.id] = p;
+
         changedChildren.forEach(ch => {
           if (slot === 'vater_id' && ch.vater_id == null) ch.vater_id = p.id;
           else if (slot === 'mutter_id' && ch.mutter_id == null) ch.mutter_id = p.id;
           else if (ch.vater_id == null) ch.vater_id = p.id;
           else if (ch.mutter_id == null) ch.mutter_id = p.id;
         });
-        // Partner: Verknüpfung auch beim Partner eintragen, wenn dort noch keiner steht
-        const sp = p.ehepartner_ids && p.ehepartner_ids[0] != null ? PERSONS.byId[p.ehepartner_ids[0]] : null;
-        if (sp && !(sp.ehepartner_ids && sp.ehepartner_ids.length)){
-          sp.ehepartner_ids = [p.id];
-          if (!sp.ehepartner_raw) sp.ehepartner_raw = fullName(p);
-          if (!sp.beziehungsstatus && p.beziehungsstatus) sp.beziehungsstatus = p.beziehungsstatus;
-          await persistPerson(sp, pin);
+
+        const items2 = changedChildren.map(ch => ({ resource: 'personen', id: ch.id, data: { vater_id: ch.vater_id, mutter_id: ch.mutter_id } }));
+        let relIdx2 = -1;
+        if (relChanged && (newPartnerId != null || newStatus || newPartnerRaw)){
+          relIdx2 = items2.length;
+          items2.push({ resource: 'beziehungen', id: null, data: relFields() });
+        }
+        if (items2.length){
+          const res2 = await sendBatchOrLocal(items2, pin, p);
+          if (!res2.ok){ console.warn(res2.error); throw new Error('Person angelegt, aber Kinder/Beziehung konnten nicht gespeichert werden. ' + String(res2.error || '').slice(0, 160)); }
+          if (relIdx2 !== -1 && res2.result && res2.result[relIdx2] && res2.result[relIdx2].id != null) p._relId = Number(res2.result[relIdx2].id);
         }
       } else {
-        const result = await persistPerson(p, pin);
-        if (!result.ok) return false;
-      }
-      await persistChildLinks(changedChildren, pin);
-
-      // Heiratsdaten auch beim Partner eintragen (wenn dieser auf diese Person verweist oder frei ist)
-      if (HAS_HEIRAT && heiratChanged && p.ehepartner_ids && p.ehepartner_ids[0] != null){
-        const sp = PERSONS.byId[p.ehepartner_ids[0]];
-        if (sp && (!(sp.ehepartner_ids || []).length || sp.ehepartner_ids[0] === p.id)){
-          sp.heirat_datum = p.heirat_datum; sp.heirat_ort = p.heirat_ort;
-          await persistPerson(sp, pin);
+        const items = [{ resource: 'personen', id: p.id, data: personFields(p) }];
+        changedChildren.forEach(child => items.push({ resource: 'personen', id: child.id, data: { vater_id: child.vater_id, mutter_id: child.mutter_id } }));
+        let relIdx = -1;
+        if (relChanged){
+          relIdx = items.length;
+          items.push({ resource: 'beziehungen', id: p._relId || null, data: relFields() });
         }
+        const res = await sendBatchOrLocal(items, pin, p);
+        if (!res.ok){ console.warn(res.error); throw new Error('Konnte nicht speichern (PIN falsch oder keine Verbindung zur Datenbank). ' + String(res.error || '').slice(0, 160)); }
+        if (relIdx !== -1 && res.result && res.result[relIdx] && res.result[relIdx].id != null) p._relId = Number(res.result[relIdx].id);
+      }
+
+      // Lokalen Stand (fuer die sofortige Anzeige ohne Neuladen) nachziehen.
+      p.beziehungsstatus = newStatus;
+      p.ehepartner_raw = newPartnerRaw;
+      p.ehepartner_ids = newPartnerId != null ? [newPartnerId] : [];
+      p.heirat_datum = newHeiratDatum;
+      p.heirat_ort = newHeiratOrt;
+      if (match){
+        match.ehepartner_ids = [p.id];
+        match.ehepartner_raw = fullName(p);
+        match.beziehungsstatus = newStatus;
+        match.heirat_datum = newHeiratDatum;
+        match.heirat_ort = newHeiratOrt;
+        match._relId = p._relId;
+      }
+      if (oldPartnerId != null && oldPartnerId !== newPartnerId){
+        const oldP = PERSONS.byId[oldPartnerId];
+        if (oldP && (oldP.ehepartner_ids || [])[0] === p.id) { oldP.ehepartner_ids = []; oldP.ehepartner_raw = null; }
       }
 
       route();
