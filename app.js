@@ -941,7 +941,9 @@
     if (!p) return;
     const labelOfId = pid => (pid != null && PERSONS.byId[pid]) ? personLabel(PERSONS.byId[pid]) : '';
     // ohne die Person selbst: so wird ein falscher Eintrag "eigener Elternteil" beim Speichern entfernt
-    const currentKids = new Set(Object.values(PERSONS.byId).filter(x => x.id !== id && (x.vater_id === id || x.mutter_id === id)).map(x => x.id));
+    // Bei einer neuen Person (id == null) gibt es noch keine Kinder - sonst wuerde die Prüfung unten
+    // (x.vater_id === id) faelschlich jede Person ohne eingetragenen Vater/Mutter mit-matchen.
+    const currentKids = new Set(isNew ? [] : Object.values(PERSONS.byId).filter(x => x.id !== id && (x.vater_id === id || x.mutter_id === id)).map(x => x.id));
 
     modalRoot.innerHTML = `
       <div class="modal-overlay" id="modal-overlay">
